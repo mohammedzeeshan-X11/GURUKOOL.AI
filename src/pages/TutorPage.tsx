@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Languages, Send } from "lucide-react";
+import { useStudentAvatar } from "../context/StudentAvatarContext";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
@@ -43,10 +44,11 @@ const LANGUAGE_OPTIONS: readonly TutorLanguage[] = [
 ];
 
 export function TutorPage() {
+  const { avatar, updateAvatar } = useStudentAvatar();
   const [subject, setSubject] = useState<SubjectArea>("Physics");
-  const [classLevel, setClassLevel] = useState<ClassLevel>("Class 8");
-  const [board, setBoard] = useState<CurriculumBoard>("NCERT / CBSE");
-  const [language, setLanguage] = useState<TutorLanguage>("English");
+  const [classLevel, setClassLevel] = useState<ClassLevel>(avatar.classLevel);
+  const [board, setBoard] = useState<CurriculumBoard>(avatar.board);
+  const language = avatar.language;
   const [question, setQuestion] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
@@ -157,7 +159,9 @@ export function TutorPage() {
                 </span>
                 <select
                   value={language}
-                  onChange={(e) => setLanguage(e.target.value as TutorLanguage)}
+                  onChange={(e) =>
+                    updateAvatar({ language: e.target.value as TutorLanguage })
+                  }
                   className="w-full min-h-[42px] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-3 text-sm text-[var(--text-primary)]"
                 >
                   {LANGUAGE_OPTIONS.map((item) => (

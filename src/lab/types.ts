@@ -12,7 +12,14 @@ export type StationId =
   | "dna"
   | "trig";
 
-export type LabViewMode = "orbit" | "walk" | "ar-camera" | "vr-xr" | "ar-xr";
+export type LabViewMode =
+  | "orbit"
+  | "walk"
+  | "kid-control"
+  | "ar-camera"
+  | "vr-preview"
+  | "vr-xr"
+  | "ar-xr";
 
 export type MicroscopeSpecimen = "onion" | "stomata" | "cheek";
 

@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { AvatarCustomizerModal } from "./components/avatar/AvatarCustomizerModal";
 import { AppLayout } from "./components/layout/AppLayout";
+import { StudentAvatarProvider } from "./context/StudentAvatarContext";
 import { CurriculumPage } from "./pages/CurriculumPage";
 import { LaboratoriesPage } from "./pages/LaboratoriesPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -33,10 +35,13 @@ function RouteView() {
 
 export default function App() {
   return (
-    <RouterProvider>
-      <AppLayout>
-        <RouteView />
-      </AppLayout>
-    </RouterProvider>
+    <StudentAvatarProvider>
+      <RouterProvider>
+        <AppLayout>
+          <RouteView />
+        </AppLayout>
+        <AvatarCustomizerModal />
+      </RouterProvider>
+    </StudentAvatarProvider>
   );
 }

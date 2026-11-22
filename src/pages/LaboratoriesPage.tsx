@@ -6,15 +6,34 @@ import {
   FlaskConical,
   Footprints,
   Glasses,
+  Loader2,
+  SlidersHorizontal,
+  Square,
+  Volume2,
 } from "lucide-react";
+import { StudentAvatarSvg } from "../components/avatar/StudentAvatarSvg";
 import { VirtualLaboratory } from "../components/lab/VirtualLaboratory";
 import { VirtualLabViewport } from "../components/lab/VirtualLabViewport";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { LAB_QUESTS } from "../lab/quests";
+import { useStudentAvatar } from "../context/StudentAvatarContext";
+import {
+  buildSpokenExplanationScript,
+  LAB_LANGUAGE_OPTIONS,
+} from "../lab/explainability";
+import {
+  buildProgressSnapshot,
+  INITIAL_EXPERIMENT_STATE,
+  LAB_QUESTS,
+} from "../lab/quests";
 import type { StationId } from "../lab/types";
+import {
+  labVoiceNarrator,
+  useVoiceNarrator,
+} from "../lab/voiceNarrator";
 import { useRouter } from "../router/RouterContext";
+import type { TutorLanguage } from "../types/navigation";
 
 const STATIONS: readonly StationId[] = [
   "pendulum",
@@ -63,6 +82,8 @@ const INITIAL_COMPLETED: Record<StationId, boolean> = {
 
 export function LaboratoriesPage() {
   const { navigate } = useRouter();
+  const { avatar, updateAvatar, setCustomizerOpen } = useStudentAvatar();
+  const voice = useVoiceNarrator();
   const [labActive, setLabActive] = useState(false);
   const [entryStation, setEntryStation] = useState<StationId>("pendulum");
   const [disciplineFilter, setDisciplineFilter] =
@@ -85,6 +106,15 @@ export function LaboratoriesPage() {
   const totalXp = useMemo(
     () => STATIONS.reduce((sum, id) => sum + LAB_QUESTS[id].xpReward, 0),
     [],
+  );
+
+  const progress = useMemo(
+    () => buildProgressSnapshot(completedQuests),
+    [completedQuests],
+  );
+  const completedCount = useMemo(
+    () => STATIONS.filter((id) => completedQuests[id]).length,
+    [completedQuests],
   );
 
   if (labActive) {
@@ -114,6 +144,68 @@ export function LaboratoriesPage() {
           </Button>
         }
       />
+
+      {/* Student Researcher Avatar & Progress Bar */}
+      <Card
+        tone="surface"
+        padding="sm"
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
+        <div className="flex items-center gap-4">
+          <StudentAvatarSvg avatar={avatar} size="md" />
+          <div className="space-y-0.5">
+            <div className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--text-muted)]">
+              <span className="font-medium text-[var(--accent-mocha)]">
+                Student Researcher
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>{avatar.classLevel}</span>
+              <span aria-hidden="true">·</span>
+              <span>{avatar.board}</span>
+            </div>
+            <p className="text-base font-semibold text-[var(--text-primary)]">
+              {avatar.name || "Student"} ·{" "}
+              <span className="text-[var(--accent-lavender-ink)]">
+                {progress.rankTitle}
+              </span>
+            </p>
+            <p className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
+              {progress.xp} / {totalXp} XP · {completedCount}/{STATIONS.length} Experiments Completed
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <select
+            aria-label="Preferred lab voice language"
+            value={avatar.language}
+            onChange={(e) => {
+              labVoiceNarrator.stop();
+              updateAvatar({ language: e.target.value as TutorLanguage });
+            }}
+            className="min-h-[38px] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-canvas)] px-2.5 text-xs font-medium text-[var(--text-primary)] cursor-pointer"
+          >
+            {LAB_LANGUAGE_OPTIONS.map((lang) => (
+              <option key={lang.id} value={lang.id}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => setCustomizerOpen(true)}
+            className="shrink-0"
+          >
+            <SlidersHorizontal
+              className="h-3.5 w-3.5 inline mr-1.5"
+              aria-hidden="true"
+            />
+            Customize Avatar
+          </Button>
+        </div>
+      </Card>
 
       {/* Interactive 3D-Inspired Container Workbench */}
       <VirtualLaboratory
@@ -251,18 +343,54 @@ export function LaboratoriesPage() {
                   </div>
                 </div>
 
-                <div>
+                <div className="flex items-center gap-2">
                   <Button
                     variant="secondary"
                     size="md"
                     onClick={() => enterAtStation(id)}
-                    className="w-full"
+                    className="flex-1"
                   >
                     <FlaskConical
                       className="h-4 w-4 inline mr-1.5"
                       aria-hidden="true"
                     />
-                    Perform in 3D / AR
+                    Perform in 3D
+                  </Button>
+
+                  <Button
+                    variant={
+                      voice.activeKey === `card:${id}:${avatar.language}` &&
+                      voice.status !== "idle"
+                        ? "primary"
+                        : "ghost"
+                    }
+                    size="md"
+                    aria-label={`Listen to explanation for ${quest.title}`}
+                    onClick={() =>
+                      void labVoiceNarrator.speak(
+                        `card:${id}:${avatar.language}`,
+                        buildSpokenExplanationScript(
+                          id,
+                          INITIAL_EXPERIMENT_STATE,
+                          avatar.name,
+                          avatar.language,
+                        ),
+                        { language: avatar.language },
+                      )
+                    }
+                  >
+                    {voice.activeKey === `card:${id}:${avatar.language}` &&
+                    voice.status === "loading" ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : voice.activeKey === `card:${id}:${avatar.language}` &&
+                      voice.status === "speaking" ? (
+                      <Square className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <Volume2 className="h-4 w-4" aria-hidden="true" />
+                    )}
                   </Button>
                 </div>
               </Card>

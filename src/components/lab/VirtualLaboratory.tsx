@@ -7,6 +7,7 @@ import {
   Droplets,
   FlaskConical,
   Gauge,
+  Loader2,
   Maximize2,
   Microscope,
   Pause,
@@ -14,11 +15,18 @@ import {
   RotateCcw,
   Sliders,
   Sparkles,
+  Square,
   Sun,
   Target,
+  Volume2,
   Zap,
 } from "lucide-react";
+import { useStudentAvatar } from "../../context/StudentAvatarContext";
 import { labAudio } from "../../lab/audio";
+import {
+  buildSpokenExplanationScript,
+  LAB_LANGUAGE_OPTIONS,
+} from "../../lab/explainability";
 import {
   calculateBoylesPressure,
   calculateOpticsDeviation,
@@ -33,9 +41,12 @@ import {
 } from "../../lab/quests";
 import type {
   DnaBase,
+  LabExperimentState,
   MicroscopeSpecimen,
   StationId,
 } from "../../lab/types";
+import { labVoiceNarrator, useVoiceNarrator } from "../../lab/voiceNarrator";
+import type { TutorLanguage } from "../../types/navigation";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 
@@ -117,10 +128,18 @@ export function VirtualLaboratory({
   onQuestsChange,
   onLaunchImmersiveLab,
 }: VirtualLaboratoryProps) {
+  const { avatar, updateAvatar } = useStudentAvatar();
+  const voice = useVoiceNarrator();
   const [selectedEquipment, setSelectedEquipment] =
     useState<StationId>("pendulum");
   const [perspective, setPerspective] =
     useState<StagePerspective>("isometric");
+
+  useEffect(() => {
+    return () => {
+      labVoiceNarrator.stop();
+    };
+  }, []);
 
   // 01: Pendulum (initial 0.75 m so student actively calibrates to 1.00 m)
   const [pendulumRunning, setPendulumRunning] = useState(true);
@@ -569,6 +588,145 @@ export function VirtualLaboratory({
 
   const activeQuest = LAB_QUESTS[selectedEquipment];
 
+  const liveLabState = useMemo<LabExperimentState>(
+    () => ({
+      pendulum: {
+        running: pendulumRunning,
+        lengthM: pendulumLength,
+        amplitudeDeg: pendulumAngleDeg,
+        angleRad: (pendulumPhase * Math.PI) / 180,
+        elapsedOscillations: isCurrentCalibrated && selectedEquipment === "pendulum" ? 1 : 0,
+        measuredPeriodS: pendulumPeriod,
+      },
+      optics: {
+        beamOn: beamActive,
+        prismAngleDeg: prismAngle,
+        refractiveIndex,
+        deviationDeg: opticsDeviation,
+      },
+      titration: {
+        acidVolumeMl: 25,
+        baseAddedMl,
+        currentPh,
+        dropPulse: 0,
+      },
+      circuit: {
+        switchClosed,
+        voltageV: voltage,
+        resistanceOhm: resistance,
+        currentA: currentAmps,
+      },
+      electrolysis: {
+        powerOn: electroPower,
+        voltageV: electroVoltage,
+        h2VolumeMl: h2Ml,
+        o2VolumeMl: o2Ml,
+      },
+      photosynthesis: {
+        lampOn,
+        lightIntensityPct: lightPct,
+        co2LevelGl: co2Gl,
+        bubblesPerMin: photoBubblesPerMin,
+      },
+      microscope: {
+        illuminatorOn: stageLampOn,
+        magnification,
+        focusValue,
+        specimen,
+      },
+      projectile: {
+        angleDeg: projAngleDeg,
+        speedMs: projSpeedMs,
+        rangeM: projRangeM,
+        launchPulse: 0,
+        lastLandedRangeM: lastLandedRange,
+      },
+      boyles: {
+        volumeMl: boylesVolumeMl,
+        pressureKpa: boylesPressureKpa,
+      },
+      wave: {
+        running: waveRunning,
+        frequencyHz: waveFreqHz,
+        tensionN: waveTensionN,
+        harmonicNumber: waveHarmonic,
+      },
+      dna: {
+        rotating: dnaRotating,
+        templateStrand: [...DNA_TEMPLATE_STRAND],
+        pairedStrand: dnaPaired,
+      },
+      trig: {
+        sweeping: trigSweeping,
+        angleDeg: trigAngleDeg,
+      },
+    }),
+    [
+      pendulumRunning,
+      pendulumLength,
+      pendulumAngleDeg,
+      pendulumPhase,
+      isCurrentCalibrated,
+      selectedEquipment,
+      pendulumPeriod,
+      beamActive,
+      prismAngle,
+      refractiveIndex,
+      opticsDeviation,
+      baseAddedMl,
+      currentPh,
+      switchClosed,
+      voltage,
+      resistance,
+      currentAmps,
+      electroPower,
+      electroVoltage,
+      h2Ml,
+      o2Ml,
+      lampOn,
+      lightPct,
+      co2Gl,
+      photoBubblesPerMin,
+      stageLampOn,
+      magnification,
+      focusValue,
+      specimen,
+      projAngleDeg,
+      projSpeedMs,
+      projRangeM,
+      lastLandedRange,
+      boylesVolumeMl,
+      boylesPressureKpa,
+      waveRunning,
+      waveFreqHz,
+      waveTensionN,
+      waveHarmonic,
+      dnaRotating,
+      dnaPaired,
+      trigSweeping,
+      trigAngleDeg,
+    ],
+  );
+
+  const liveLabStateRef = useRef(liveLabState);
+  useEffect(() => {
+    liveLabStateRef.current = liveLabState;
+  }, [liveLabState]);
+
+  // Silently warm up AI voice PCM in the background when switching stations or language so Explain plays instantly
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const script = buildSpokenExplanationScript(
+        selectedEquipment,
+        liveLabStateRef.current,
+        avatar.name,
+        avatar.language,
+      );
+      labVoiceNarrator.prefetch(script, { language: avatar.language });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [selectedEquipment, avatar.name, avatar.language]);
+
   return (
     <section
       aria-label="Virtual Laboratory Interactive Bench"
@@ -628,6 +786,73 @@ export function VirtualLaboratory({
             })}
           </div>
 
+          <select
+            aria-label="Explanation language"
+            value={avatar.language}
+            onChange={(e) => {
+              labAudio.playClick(540);
+              labVoiceNarrator.stop();
+              updateAvatar({ language: e.target.value as TutorLanguage });
+            }}
+            className="min-h-[38px] rounded-lg border border-[#E5E4E2] bg-white px-2.5 text-xs font-medium text-[#231B16] cursor-pointer"
+          >
+            {LAB_LANGUAGE_OPTIONS.map((lang) => (
+              <option key={lang.id} value={lang.id}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+
+          <Button
+            variant={
+              voice.activeKey === `workbench:${selectedEquipment}:${avatar.language}` &&
+              voice.status !== "idle"
+                ? "secondary"
+                : "primary"
+            }
+            size="md"
+            onClick={() => {
+              labAudio.playClick(600);
+              const script = buildSpokenExplanationScript(
+                selectedEquipment,
+                liveLabState,
+                avatar.name,
+                avatar.language,
+              );
+              void labVoiceNarrator.speak(
+                `workbench:${selectedEquipment}:${avatar.language}`,
+                script,
+                { language: avatar.language },
+              );
+            }}
+          >
+            {voice.activeKey === `workbench:${selectedEquipment}:${avatar.language}` &&
+            voice.status === "loading" ? (
+              <Loader2
+                className="h-3.5 w-3.5 inline mr-1.5 animate-spin"
+                aria-hidden="true"
+              />
+            ) : voice.activeKey === `workbench:${selectedEquipment}:${avatar.language}` &&
+              voice.status === "speaking" ? (
+              <Square
+                className="h-3.5 w-3.5 inline mr-1.5"
+                aria-hidden="true"
+              />
+            ) : (
+              <Volume2
+                className="h-3.5 w-3.5 inline mr-1.5"
+                aria-hidden="true"
+              />
+            )}
+            {voice.activeKey === `workbench:${selectedEquipment}:${avatar.language}` &&
+            voice.status === "loading"
+              ? "Voice..."
+              : voice.activeKey === `workbench:${selectedEquipment}:${avatar.language}` &&
+                  voice.status === "speaking"
+                ? "Stop"
+                : "Explain"}
+          </Button>
+
           {onLaunchImmersiveLab ? (
             <Button
               variant="secondary"
@@ -643,6 +868,22 @@ export function VirtualLaboratory({
           ) : null}
         </div>
       </div>
+
+      {voice.error ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 px-5 py-2 border-b border-[#D9822B]/30 bg-[#FFF8F1] text-xs text-[#8C4A0B]"
+        >
+          <span>{voice.error}</span>
+          <button
+            type="button"
+            onClick={() => labVoiceNarrator.clearError()}
+            className="font-medium text-[#6F4E37] hover:underline whitespace-nowrap cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {/* Two-Zone Sandbox Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12">

@@ -6,7 +6,9 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import {
   generateConceptExplanation,
+  generateSpokenExplanation,
   isGeminiConfigured,
+  streamSpokenExplanation,
 } from "./server/gemini.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -107,6 +109,181 @@ async function startServer() {
       res.status(502).json({
         error:
           "Unable to reach the AI tutor service right now. Please try again.",
+      });
+    }
+  });
+
+  // Server-side AI Spoken Explanation (TTS) endpoint
+  app.post("/api/tutor/speak", async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    const style =
+      typeof body.style === "string" && body.style.trim()
+        ? body.style.trim()
+        : undefined;
+    const allowedVoices = new Set(["Puck", "Charon", "Kore", "Fenrir", "Zephyr"]);
+    const voiceName =
+      typeof body.voiceName === "string" && allowedVoices.has(body.voiceName)
+        ? (body.voiceName as "Puck" | "Charon" | "Kore" | "Fenrir" | "Zephyr")
+        : undefined;
+    const allowedLanguages = new Set(["English", "Kannada", "Hindi"]);
+    const language =
+      typeof body.language === "string" && allowedLanguages.has(body.language)
+        ? (body.language as "English" | "Kannada" | "Hindi")
+        : undefined;
+
+    if (!text) {
+      res.status(400).json({
+        error: "Please provide text to narrate.",
+      });
+      return;
+    }
+
+    if (text.length > 2500) {
+      res.status(400).json({
+        error: "Narration script is too long. Please keep it under 2500 characters.",
+      });
+      return;
+    }
+
+    if (!isGeminiConfigured()) {
+      res.status(503).json({
+        error:
+          "Server-side Gemini integration is not configured. Switch to Device Voice or set GEMINI_API_KEY in Settings > Secrets.",
+      });
+      return;
+    }
+
+    try {
+      const result = await generateSpokenExplanation({
+        text,
+        style,
+        language,
+        voiceName,
+      });
+      res.json(result);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to generate speech audio.";
+      console.error("[PHYSIX AI] /api/tutor/speak error:", message);
+
+      if (message.includes("403") || message.includes("PERMISSION_DENIED")) {
+        res.status(403).json({
+          error:
+            "The configured Gemini API key lacks permission. Verify the key in Settings > Secrets.",
+        });
+        return;
+      }
+
+      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+        res.status(429).json({
+          error:
+            "Gemini API quota limit reached. Please try again shortly or use Device Voice.",
+        });
+        return;
+      }
+
+      res.status(502).json({
+        error:
+          "Unable to generate AI voice audio right now. Please try again or switch to Device Voice.",
+      });
+    }
+  });
+
+  // Low-latency streaming PCM TTS endpoint
+  app.post("/api/tutor/speak-stream", async (req, res) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const text = typeof body.text === "string" ? body.text.trim() : "";
+    const style =
+      typeof body.style === "string" && body.style.trim()
+        ? body.style.trim()
+        : undefined;
+    const allowedVoices = new Set(["Puck", "Charon", "Kore", "Fenrir", "Zephyr"]);
+    const voiceName =
+      typeof body.voiceName === "string" && allowedVoices.has(body.voiceName)
+        ? (body.voiceName as "Puck" | "Charon" | "Kore" | "Fenrir" | "Zephyr")
+        : undefined;
+    const allowedLanguages = new Set(["English", "Kannada", "Hindi"]);
+    const language =
+      typeof body.language === "string" && allowedLanguages.has(body.language)
+        ? (body.language as "English" | "Kannada" | "Hindi")
+        : undefined;
+
+    if (!text) {
+      res.status(400).json({ error: "Please provide text to narrate." });
+      return;
+    }
+
+    if (text.length > 2500) {
+      res.status(400).json({
+        error: "Narration script is too long. Please keep it under 2500 characters.",
+      });
+      return;
+    }
+
+    if (!isGeminiConfigured()) {
+      res.status(503).json({
+        error:
+          "Server-side Gemini integration is not configured. Switch to Device Voice or set GEMINI_API_KEY in Settings > Secrets.",
+      });
+      return;
+    }
+
+    const abortController = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abortController.abort();
+      }
+    });
+
+    try {
+      let headersWritten = false;
+      await streamSpokenExplanation(
+        { text, style, language, voiceName },
+        (pcmChunk) => {
+          if (abortController.signal.aborted) return;
+          if (!headersWritten) {
+            headersWritten = true;
+            res.status(200);
+            res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("Cache-Control", "no-store");
+            res.setHeader("X-Audio-Sample-Rate", "24000");
+            res.setHeader("X-Audio-Format", "pcm-s16le");
+            res.flushHeaders?.();
+          }
+          res.write(pcmChunk);
+        },
+        abortController.signal,
+      );
+      if (!res.writableEnded) {
+        res.end();
+      }
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const message =
+        err instanceof Error ? err.message : "Failed to stream speech audio.";
+      console.error("[PHYSIX AI] /api/tutor/speak-stream error:", message);
+      if (res.headersSent) {
+        if (!res.writableEnded) res.end();
+        return;
+      }
+      if (message.includes("403") || message.includes("PERMISSION_DENIED")) {
+        res.status(403).json({
+          error:
+            "The configured Gemini API key lacks permission. Verify the key in Settings > Secrets.",
+        });
+        return;
+      }
+      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+        res.status(429).json({
+          error:
+            "Gemini API quota limit reached. Please try again shortly or use Device Voice.",
+        });
+        return;
+      }
+      res.status(502).json({
+        error:
+          "Unable to stream AI voice audio right now. Please try again or switch to Device Voice.",
       });
     }
   });
