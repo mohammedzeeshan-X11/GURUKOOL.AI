@@ -20,19 +20,19 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 async function startServer() {
   const app = express();
 
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: "10mb" }));
 
   // Server health and readiness endpoint (never exposes secrets)
   app.get("/api/health", (_req, res) => {
     res.json({
       status: "ok",
-      service: "physix-ai",
+      service: "pocket-labs",
       geminiConfigured: isGeminiConfigured(),
       timestamp: new Date().toISOString(),
     });
   });
 
-  // Server-side AI Tutor endpoint
+  // Server-side AI Tutor + 3D NCERT Simulation Generator endpoint
   app.post("/api/tutor/explain", async (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const question =
@@ -44,7 +44,7 @@ async function startServer() {
     const classLevel =
       typeof body.classLevel === "string" && body.classLevel.trim()
         ? body.classLevel.trim()
-        : "Class 8";
+        : "Class 10";
     const board =
       typeof body.board === "string" && body.board.trim()
         ? body.board.trim()
@@ -54,16 +54,38 @@ async function startServer() {
         ? body.language.trim()
         : "English";
 
-    if (!question) {
+    const allowedImageMimes = new Set([
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ]);
+    const imageBase64 =
+      typeof body.imageBase64 === "string" && body.imageBase64.trim().length > 0
+        ? body.imageBase64.trim()
+        : undefined;
+    const imageMimeType =
+      typeof body.imageMimeType === "string" &&
+      allowedImageMimes.has(body.imageMimeType.trim())
+        ? body.imageMimeType.trim()
+        : undefined;
+
+    if (!question && !imageBase64) {
       res.status(400).json({
-        error: "Please enter a STEM question or concept to explain.",
+        error: "Please enter an NCERT science experiment/concept or upload a textbook diagram.",
       });
       return;
     }
 
-    if (question.length > 1500) {
+    if (question.length > 2500) {
       res.status(400).json({
-        error: "Question is too long. Please keep it under 1500 characters.",
+        error: "Concept text is too long. Please keep it under 2500 characters.",
+      });
+      return;
+    }
+
+    if (imageBase64 && imageBase64.length > 8_000_000) {
+      res.status(400).json({
+        error: "Uploaded diagram is too large. Please choose an image under 5 MB.",
       });
       return;
     }
@@ -71,7 +93,7 @@ async function startServer() {
     if (!isGeminiConfigured()) {
       res.status(503).json({
         error:
-          "Server-side Gemini integration is not configured in this environment. Set GEMINI_API_KEY in Settings > Secrets to enable live explanations.",
+          "Server-side Gemini integration is not configured in this environment. Set GEMINI_API_KEY in Settings > Secrets to enable live explanations and 3D simulations.",
       });
       return;
     }
@@ -83,12 +105,14 @@ async function startServer() {
         classLevel,
         board,
         language,
+        imageBase64: imageBase64 && imageMimeType ? imageBase64 : undefined,
+        imageMimeType: imageBase64 && imageMimeType ? imageMimeType : undefined,
       });
       res.json(result);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to generate explanation.";
-      console.error("[PHYSIX AI] /api/tutor/explain error:", message);
+      console.error("[Pocket Labs] /api/tutor/explain error:", message);
 
       if (message.includes("403") || message.includes("PERMISSION_DENIED")) {
         res.status(403).json({
@@ -165,9 +189,21 @@ async function startServer() {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to generate speech audio.";
-      console.error("[PHYSIX AI] /api/tutor/speak error:", message);
+
+      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+        console.warn(
+          "[Pocket Labs] /api/tutor/speak quota limit reached (429 RESOURCE_EXHAUSTED).",
+        );
+        res.status(429).json({
+          code: "QUOTA_EXHAUSTED",
+          error:
+            "Gemini AI voice free-tier daily quota reached. Using Device Voice — select a billing-enabled API key in Settings > Secrets for higher AI voice quota.",
+        });
+        return;
+      }
 
       if (message.includes("403") || message.includes("PERMISSION_DENIED")) {
+        console.warn("[Pocket Labs] /api/tutor/speak permission denied (403).");
         res.status(403).json({
           error:
             "The configured Gemini API key lacks permission. Verify the key in Settings > Secrets.",
@@ -175,14 +211,7 @@ async function startServer() {
         return;
       }
 
-      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
-        res.status(429).json({
-          error:
-            "Gemini API quota limit reached. Please try again shortly or use Device Voice.",
-        });
-        return;
-      }
-
+      console.error("[Pocket Labs] /api/tutor/speak error:", message);
       res.status(502).json({
         error:
           "Unable to generate AI voice audio right now. Please try again or switch to Device Voice.",
@@ -262,25 +291,30 @@ async function startServer() {
       if (abortController.signal.aborted) return;
       const message =
         err instanceof Error ? err.message : "Failed to stream speech audio.";
-      console.error("[PHYSIX AI] /api/tutor/speak-stream error:", message);
       if (res.headersSent) {
         if (!res.writableEnded) res.end();
         return;
       }
+      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+        console.warn(
+          "[Pocket Labs] /api/tutor/speak-stream quota limit reached (429 RESOURCE_EXHAUSTED).",
+        );
+        res.status(429).json({
+          code: "QUOTA_EXHAUSTED",
+          error:
+            "Gemini AI voice free-tier daily quota reached. Using Device Voice — select a billing-enabled API key in Settings > Secrets for higher AI voice quota.",
+        });
+        return;
+      }
       if (message.includes("403") || message.includes("PERMISSION_DENIED")) {
+        console.warn("[Pocket Labs] /api/tutor/speak-stream permission denied (403).");
         res.status(403).json({
           error:
             "The configured Gemini API key lacks permission. Verify the key in Settings > Secrets.",
         });
         return;
       }
-      if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
-        res.status(429).json({
-          error:
-            "Gemini API quota limit reached. Please try again shortly or use Device Voice.",
-        });
-        return;
-      }
+      console.error("[Pocket Labs] /api/tutor/speak-stream error:", message);
       res.status(502).json({
         error:
           "Unable to stream AI voice audio right now. Please try again or switch to Device Voice.",
@@ -308,11 +342,11 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`PHYSIX AI server listening on http://0.0.0.0:${PORT}`);
+    console.log(`Pocket Labs server listening on http://0.0.0.0:${PORT}`);
   });
 }
 
 startServer().catch((err) => {
-  console.error("Failed to start PHYSIX AI server:", err);
+  console.error("Failed to start Pocket Labs server:", err);
   process.exit(1);
 });

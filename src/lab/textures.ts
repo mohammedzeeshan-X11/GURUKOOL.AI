@@ -98,3 +98,42 @@ export function createScaleDialTexture(
   texture.anisotropy = maxAnisotropy;
   return texture;
 }
+
+export function createPlaqueTexture(
+  title: string,
+  subtitle: string,
+  maxAnisotropy: number,
+): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 768;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+
+  if (ctx) {
+    ctx.fillStyle = "#FAF8F5";
+    ctx.fillRect(0, 0, 768, 256);
+
+    ctx.strokeStyle = "#6F4E37";
+    ctx.lineWidth = 8;
+    ctx.strokeRect(12, 12, 744, 232);
+
+    ctx.strokeStyle = "rgba(111, 78, 55, 0.24)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(24, 24, 720, 208);
+
+    ctx.fillStyle = "#231B16";
+    ctx.font = "600 42px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(title, 384, 98, 680);
+
+    ctx.fillStyle = "#5C5149";
+    ctx.font = "500 26px monospace";
+    ctx.fillText(subtitle, 384, 166, 680);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = maxAnisotropy;
+  return texture;
+}

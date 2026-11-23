@@ -28,10 +28,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <div className="mx-auto flex max-w-[1200px] flex-col gap-4 px-4 sm:px-6 lg:px-8 py-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-0.5">
             <p className="font-display text-sm font-semibold text-[var(--accent-mocha)]">
-              PHYSIX AI
+              Pocket Labs
             </p>
             <p className="text-xs text-[var(--text-muted)]">
-              Classes 6–10 · NCERT/CBSE &amp; Karnataka State Board · Physics, Chemistry, Biology &amp; Mathematics
+              Classes 6–12 · NCERT/CBSE &amp; Karnataka State Board · Physics, Chemistry &amp; Biology 3D Laboratories
             </p>
           </div>
 

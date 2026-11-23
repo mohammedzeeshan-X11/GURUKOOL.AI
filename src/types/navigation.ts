@@ -1,9 +1,4 @@
-export type AppRoutePath =
-  | "/"
-  | "/labs"
-  | "/curriculum"
-  | "/tutor"
-  | "/teacher";
+export type AppRoutePath = "/" | "/labs" | "/tutor";
 
 export interface NavItem {
   label: string;
@@ -13,12 +8,10 @@ export interface NavItem {
 export const PRIMARY_NAV_ITEMS: readonly NavItem[] = [
   { label: "Overview", path: "/" },
   { label: "Laboratories", path: "/labs" },
-  { label: "Curriculum", path: "/curriculum" },
   { label: "AI Tutor", path: "/tutor" },
-  { label: "Teacher", path: "/teacher" },
 ] as const;
 
-export type SubjectArea = "Physics" | "Chemistry" | "Biology" | "Mathematics";
+export type SubjectArea = "Physics" | "Chemistry" | "Biology";
 
 export type ClassLevel = "Class 6" | "Class 7" | "Class 8" | "Class 9" | "Class 10";
 

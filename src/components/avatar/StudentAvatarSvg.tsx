@@ -26,18 +26,29 @@ export function StudentAvatarSvg({
     <svg
       viewBox="0 0 96 96"
       role="img"
-      aria-label={`${avatar.name || "Kid"} young researcher avatar`}
+      aria-label={`${avatar.name || "Student"} scientist avatar`}
       className={[
         SIZE_MAP[size],
-        "rounded-full border border-[#E5E4E2] bg-[#FAF8F5] shrink-0 overflow-hidden",
+        "rounded-full border border-[#D4E4F2] bg-[#4AA8E8] shrink-0 overflow-hidden",
         className,
       ].join(" ")}
     >
-      {/* Warm Ivory & Subtle Lavender Halo Backdrop */}
-      <rect width="96" height="96" fill="#F4F1EC" />
-      <circle cx="48" cy="48" r="40" fill="#E6E0F0" fillOpacity="0.45" />
+      <defs>
+        <linearGradient id="pocketLabsSkyBg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#4DB5F2" />
+          <stop offset="100%" stopColor="#2687CC" />
+        </linearGradient>
+      </defs>
 
-      {/* Back Hair Layers */}
+      {/* Cheerful Lab Sky Backdrop */}
+      <rect width="96" height="96" fill="url(#pocketLabsSkyBg)" />
+
+      {/* Back Hair & Nape Tufts */}
+      {avatar.hairStyle === "short" ? (
+        <g fill={avatar.hairColor}>
+          <path d="M 22 46 L 26 60 L 33 57 L 30 62 L 48 60 L 66 62 L 63 57 L 70 60 L 74 46 Z" />
+        </g>
+      ) : null}
       {avatar.hairStyle === "bob" ? (
         <path
           d="M 22 44 Q 21 68 30 74 L 66 74 Q 75 68 74 44 Z"
@@ -45,149 +56,146 @@ export function StudentAvatarSvg({
         />
       ) : null}
       {avatar.hairStyle === "bun" ? (
-        <circle cx="48" cy="17" r="11.5" fill={avatar.hairColor} />
+        <circle cx="48" cy="15" r="11" fill={avatar.hairColor} />
       ) : null}
       {avatar.hairStyle === "curly" ? (
         <g fill={avatar.hairColor}>
-          <circle cx="26" cy="34" r="9.5" />
-          <circle cx="70" cy="34" r="9.5" />
-          <circle cx="24" cy="44" r="8.5" />
-          <circle cx="72" cy="44" r="8.5" />
-          <circle cx="36" cy="23" r="10.5" />
-          <circle cx="60" cy="23" r="10.5" />
+          <circle cx="25" cy="34" r="9.5" />
+          <circle cx="71" cy="34" r="9.5" />
+          <circle cx="23" cy="45" r="8.5" />
+          <circle cx="73" cy="45" r="8.5" />
+          <circle cx="36" cy="22" r="10.5" />
+          <circle cx="60" cy="22" r="10.5" />
         </g>
       ) : null}
 
-      {/* Neck & Kid Lab Coat Shoulders + Backpack Straps */}
-      <rect x="42" y="61" width="12" height="11" rx="4" fill={avatar.skinTone} />
+      {/* Neck & Crisp White Lab Coat Shoulders */}
+      <rect x="42" y="61" width="12" height="12" rx="4" fill={avatar.skinTone} />
       <path
-        d="M 19 96 C 21 78, 32 71, 48 71 C 64 71, 75 78, 77 96 Z"
+        d="M 16 96 C 18 77, 30 70, 48 70 C 66 70, 78 77, 80 96 Z"
         fill={coat.coatHex}
-        stroke="#D2CEC7"
-        strokeWidth="1.2"
+        stroke="#B8C7D6"
+        strokeWidth="1.4"
       />
-      {/* Backpack Straps */}
-      <rect x="30" y="74" width="4.5" height="22" rx="2" fill="#5C4033" fillOpacity="0.88" />
-      <rect x="61.5" y="74" width="4.5" height="22" rx="2" fill="#5C4033" fillOpacity="0.88" />
 
-      {/* Inner Shirt & Collar Lapels */}
-      <polygon points="41,71 55,71 48,89" fill={coat.trimHex} fillOpacity="0.9" />
-      <polygon points="36,71 44,71 48,87 39,84" fill={coat.collarHex} />
-      <polygon points="60,71 52,71 48,87 57,84" fill={coat.collarHex} />
-      {/* Kid Researcher Badge Pin */}
-      <rect x="57" y="81" width="10" height="5.5" rx="1.5" fill="#FAF8F5" stroke={coat.trimHex} strokeWidth="1" />
-      <circle cx="60" cy="83.7" r="1.2" fill="#6F4E37" />
+      {/* Teal Green V-Neck Shirt & Crisp Notched Lapels */}
+      <polygon points="40,70 56,70 48,89" fill={coat.trimHex} />
+      <polygon
+        points="35,70 43,70 48,88 37,83"
+        fill={coat.coatHex}
+        stroke="#C5D2DF"
+        strokeWidth="1"
+      />
+      <polygon
+        points="61,70 53,70 48,88 59,83"
+        fill={coat.coatHex}
+        stroke="#C5D2DF"
+        strokeWidth="1"
+      />
 
-      {/* Rounded Kid Ears */}
-      <circle cx="26.5" cy="46" r="4.8" fill={avatar.skinTone} />
-      <circle cx="69.5" cy="46" r="4.8" fill={avatar.skinTone} />
+      {/* Mini Round-Bottom Blue Liquid Flask Held Up on Right Side + Sparkles */}
+      <g transform="translate(74, 67)">
+        <rect x="-2.5" y="-14" width="5" height="7" rx="1" fill="#E6F4FF" stroke="#4D6680" strokeWidth="1" />
+        <circle cx="0" cy="0" r="9" fill="#EBF6FF" fillOpacity="0.88" stroke="#4D6680" strokeWidth="1.2" />
+        <path d="M -7.5 2 A 7.8 7.8 0 0 0 7.5 2 Q 0 5 -7.5 2 Z" fill="#1874F5" />
+        <path d="M 4 -22 L 5.2 -19 L 8 -18 L 5.2 -17 L 4 -14 L 2.8 -17 L 0 -18 L 2.8 -19 Z" fill="#FFFFFF" />
+      </g>
 
-      {/* Rounder Chubby Kid Head */}
+      {/* Rounded Cartoon Ears */}
+      <circle cx="24.5" cy="46.5" r="5" fill={avatar.skinTone} stroke="#D99B6D" strokeWidth="0.9" />
+      <circle cx="71.5" cy="46.5" r="5" fill={avatar.skinTone} stroke="#D99B6D" strokeWidth="0.9" />
+
+      {/* Warm Peach Cartoon Head */}
       <rect
-        x="27"
-        y="24"
-        width="42"
-        height="40"
+        x="26"
+        y="22"
+        width="44"
+        height="42"
         rx="20"
         fill={avatar.skinTone}
+        stroke="#DF9F70"
+        strokeWidth="0.9"
       />
 
-      {/* Front Hair Cap & Playful Kid Bangs */}
+      {/* Signature Side-Swept Chestnut Brown Hair */}
       {avatar.hairStyle === "short" ? (
-        <g fill={avatar.hairColor}>
-          <path d="M 26 42 C 26 23, 39 18, 49 18 C 61 18, 70 24, 70 42 C 65 32, 56 30, 48 31 C 38 30, 31 34, 26 42 Z" />
-          <path d="M 35 28 Q 42 35 47 29 Q 53 35 59 28 Q 52 24 44 24 Z" />
+        <g>
+          <path
+            d="M 22 45 C 20 22, 34 12, 50 13 C 66 13, 75 23, 73 41 C 69 32, 61 29, 49 28 C 36 28, 29 33, 22 45 Z"
+            fill={avatar.hairColor}
+            stroke="#592E14"
+            strokeWidth="1"
+          />
+          <path
+            d="M 33 24 C 46 18, 62 21, 74 33 C 63 32, 53 26, 44 27 C 37 28, 32 32, 26 36 C 28 29, 30 26, 33 24 Z"
+            fill={avatar.hairColor}
+          />
+          <path
+            d="M 36 18 Q 50 15 62 22"
+            fill="none"
+            stroke="#B46D3C"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeOpacity="0.65"
+          />
         </g>
       ) : null}
       {avatar.hairStyle === "bob" ? (
         <path
-          d="M 25 43 C 25 22, 39 18, 48 18 C 59 18, 71 23, 71 43 C 64 32, 55 29, 48 33 C 41 29, 32 32, 25 43 Z"
+          d="M 24 43 C 24 21, 39 16, 48 16 C 59 16, 72 21, 72 43 C 65 32, 55 29, 48 33 C 41 29, 31 32, 24 43 Z"
           fill={avatar.hairColor}
         />
       ) : null}
       {avatar.hairStyle === "curly" ? (
         <g fill={avatar.hairColor}>
-          <circle cx="48" cy="21" r="10.5" />
-          <circle cx="35" cy="26" r="8" />
-          <circle cx="61" cy="26" r="8" />
+          <circle cx="48" cy="20" r="10.5" />
+          <circle cx="35" cy="25" r="8" />
+          <circle cx="61" cy="25" r="8" />
         </g>
       ) : null}
       {avatar.hairStyle === "bun" ? (
         <path
-          d="M 27 41 C 27 22, 38 19, 48 19 C 58 19, 69 22, 69 41 C 62 32, 54 31, 48 31 C 42 31, 34 32, 27 41 Z"
+          d="M 26 41 C 26 21, 38 17, 48 17 C 58 17, 70 21, 70 41 C 62 32, 54 30, 48 30 C 42 30, 34 32, 26 41 Z"
           fill={avatar.hairColor}
         />
       ) : null}
 
-      {/* Rosy Kid Cheeks */}
-      <ellipse cx="34.5" cy="51.5" rx="4.2" ry="2.6" fill="#F08C84" fillOpacity="0.45" />
-      <ellipse cx="61.5" cy="51.5" rx="4.2" ry="2.6" fill="#F08C84" fillOpacity="0.45" />
+      {/* Arched Expressive Eyebrows */}
+      <path d="M 33.5 37.5 Q 39 34 44.5 37.5" fill="none" stroke="#2A1810" strokeWidth="2.1" strokeLinecap="round" />
+      <path d="M 51.5 37.5 Q 57 34 62.5 37.5" fill="none" stroke="#2A1810" strokeWidth="2.1" strokeLinecap="round" />
 
-      {/* Big Sparkling Kid Eyes, Button Nose & Cheerful Grin */}
-      <circle cx="39.5" cy="45.5" r="3.1" fill="#1F1713" />
-      <circle cx="56.5" cy="45.5" r="3.1" fill="#1F1713" />
-      <circle cx="40.5" cy="44.3" r="1.0" fill="#FFFFFF" />
-      <circle cx="57.5" cy="44.3" r="1.0" fill="#FFFFFF" />
-      <circle cx="38.7" cy="46.6" r="0.5" fill="#FFFFFF" fillOpacity="0.8" />
-      <circle cx="55.7" cy="46.6" r="0.5" fill="#FFFFFF" fillOpacity="0.8" />
+      {/* Big Bright Cartoon Eyes (Sclera + Brown Iris + Pupil + Catchlight) */}
+      <ellipse cx="39" cy="45" rx="4.6" ry="5.5" fill="#FFFFFF" stroke="#2B1C14" strokeWidth="1" />
+      <ellipse cx="57" cy="45" rx="4.6" ry="5.5" fill="#FFFFFF" stroke="#2B1C14" strokeWidth="1" />
+      <circle cx="39.5" cy="45.5" r="3.0" fill="#5E3018" />
+      <circle cx="57.5" cy="45.5" r="3.0" fill="#5E3018" />
+      <circle cx="39.6" cy="45.6" r="1.6" fill="#18100C" />
+      <circle cx="57.6" cy="45.6" r="1.6" fill="#18100C" />
+      <circle cx="40.9" cy="43.8" r="1.15" fill="#FFFFFF" />
+      <circle cx="58.9" cy="43.8" r="1.15" fill="#FFFFFF" />
 
+      {/* Cute Small Nose & Big Bright Toothy Smile */}
+      <path d="M 46.5 49.5 Q 48 51.5 49.5 49.5" fill="none" stroke="#CC895D" strokeWidth="1.4" strokeLinecap="round" />
       <path
-        d="M 42.5 53.5 Q 48 58.5 53.5 53.5"
-        fill="none"
-        stroke="#6B3C2E"
-        strokeWidth="2.1"
-        strokeLinecap="round"
+        d="M 39.5 53.5 Q 48 54.5 56.5 53.5 Q 55 61.5 48 61.5 Q 41 61.5 39.5 53.5 Z"
+        fill="#FFFFFF"
+        stroke="#C48358"
+        strokeWidth="1.1"
       />
 
-      {/* Optional Oversized Kid Safety Goggles */}
+      {/* Clear Wrap-Around Safety Goggles with Dark Slate Top Frame */}
       {avatar.goggles ? (
         <g>
-          <rect
-            x="31.5"
-            y="39"
-            width="15"
-            height="12"
-            rx="4"
-            fill="#E6E0F0"
-            fillOpacity="0.32"
-            stroke="#42335C"
-            strokeWidth="1.7"
-          />
-          <rect
-            x="49.5"
-            y="39"
-            width="15"
-            height="12"
-            rx="4"
-            fill="#E6E0F0"
-            fillOpacity="0.32"
-            stroke="#42335C"
-            strokeWidth="1.7"
-          />
-          <line
-            x1="46.5"
-            y1="44.8"
-            x2="49.5"
-            y2="44.8"
-            stroke="#42335C"
-            strokeWidth="1.7"
-          />
-          <line
-            x1="27"
-            y1="44.5"
-            x2="31.5"
-            y2="44.5"
-            stroke="#42335C"
+          <path
+            d="M 27 40 L 69 40 L 67 51.5 Q 66.5 53 64 53 L 52.5 53 Q 50 53 48 50.5 Q 46 53 43.5 53 L 32 53 Q 29.5 53 29 51.5 Z"
+            fill="#E8F6FF"
+            fillOpacity="0.34"
+            stroke="#D9ECFA"
             strokeWidth="1.4"
           />
-          <line
-            x1="64.5"
-            y1="44.5"
-            x2="69"
-            y2="44.5"
-            stroke="#42335C"
-            strokeWidth="1.4"
-          />
+          <rect x="25.5" y="38.5" width="45" height="3.2" rx="1.4" fill="#2B3A4B" />
+          <line x1="33" y1="43" x2="36" y2="50" stroke="#FFFFFF" strokeOpacity="0.55" strokeWidth="1.6" strokeLinecap="round" />
+          <line x1="60" y1="43" x2="63" y2="50" stroke="#FFFFFF" strokeOpacity="0.55" strokeWidth="1.6" strokeLinecap="round" />
         </g>
       ) : null}
     </svg>

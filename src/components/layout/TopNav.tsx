@@ -25,7 +25,7 @@ export function TopNav() {
           }}
           className="font-display text-xl font-semibold tracking-tight text-[var(--accent-mocha)] whitespace-nowrap shrink-0"
         >
-          PHYSIX AI
+          Pocket Labs
         </a>
 
         {/* Zone 2: 5 concise single-line navigation links */}

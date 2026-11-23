@@ -71,6 +71,7 @@ class LabVoiceNarrator {
   private streamAbort: AbortController | null = null;
   private pcmCache = new Map<string, Float32Array<ArrayBuffer>>();
   private prefetchPromises = new Map<string, Promise<void>>();
+  private aiTtsPausedUntil = 0;
   private requestSeq = 0;
 
   private emit(patch: Partial<VoiceNarratorSnapshot>) {
@@ -91,6 +92,9 @@ class LabVoiceNarrator {
 
   public setEngine(engine: VoiceEngineMode): void {
     this.stop();
+    if (engine === "ai") {
+      this.aiTtsPausedUntil = 0;
+    }
     this.emit({ engine, error: null });
   }
 
@@ -179,51 +183,30 @@ class LabVoiceNarrator {
     }
   }
 
+  /**
+   * Intentionally a no-op: Gemini TTS is called strictly on-demand when the
+   * user clicks Explain so daily free-tier TTS quota is never consumed in the background.
+   */
   public prefetch(
-    text: string,
-    options?: {
+    _text: string,
+    _options?: {
       style?: string;
       language?: "English" | "Kannada" | "Hindi";
       voiceName?: MentorVoiceName;
     },
   ): void {
-    const cleanText = text.trim().slice(0, 2400);
-    if (!cleanText || this.snapshot.engine !== "ai") return;
+    // No-op to preserve daily Gemini TTS quota.
+  }
 
-    const voiceName = options?.voiceName ?? this.snapshot.voiceName;
-    const style = options?.style;
-    const language = options?.language || "English";
-    const cacheKey = `${voiceName}::${language}::${style || "default"}::${cleanText}`;
-
-    if (this.pcmCache.has(cacheKey) || this.prefetchPromises.has(cacheKey)) {
-      return;
-    }
-
-    const promise = (async () => {
-      const floatChunks: Float32Array[] = [];
-      let pendingByte: number | null = null;
-      try {
-        await requestTutorSpeechStream(
-          { text: cleanText, style, language, voiceName },
-          (chunk) => {
-            const aligned = this.pcmBytesToFloat32(chunk, pendingByte);
-            pendingByte = aligned.nextPendingByte;
-            if (aligned.samples.length > 0) {
-              floatChunks.push(aligned.samples);
-            }
-          },
-        );
-        if (floatChunks.length > 0) {
-          this.saveToCache(cacheKey, concatFloat32(floatChunks));
-        }
-      } catch {
-        // Prefetch failures are silent; foreground speak surfaces errors cleanly.
-      } finally {
-        this.prefetchPromises.delete(cacheKey);
-      }
-    })();
-
-    this.prefetchPromises.set(cacheKey, promise);
+  private isQuotaOrUnavailableError(message: string): boolean {
+    const lower = message.toLowerCase();
+    return (
+      lower.includes("429") ||
+      lower.includes("quota") ||
+      lower.includes("resource_exhausted") ||
+      lower.includes("not configured") ||
+      lower.includes("503")
+    );
   }
 
   private saveToCache(key: string, pcm: Float32Array<ArrayBuffer>): void {
@@ -324,12 +307,17 @@ class LabVoiceNarrator {
     const unlockedCtx = engine === "ai" ? this.unlockAudioContextSync() : null;
     const language = options?.language || "English";
 
-    if (engine === "device") {
+    if (engine === "device" || Date.now() < this.aiTtsPausedUntil) {
+      const quotaNotice =
+        engine === "ai" && Date.now() < this.aiTtsPausedUntil
+          ? "AI voice daily free-tier quota reached — playing with Device Voice. Select a billing-enabled API key in Settings > Secrets for higher AI voice quota."
+          : null;
       this.speakWithDeviceVoice(
         key,
         stripAudioTags(cleanText),
         language,
         token,
+        quotaNotice,
       );
       return;
     }
@@ -350,12 +338,14 @@ class LabVoiceNarrator {
     text: string,
     language: string,
     token: number,
+    notice: string | null = null,
   ): void {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       this.emit({
         status: "idle",
         activeKey: null,
         error:
+          notice ||
           "Device speech synthesis is not supported in this browser. Switch to AI Voice.",
       });
       return;
@@ -385,7 +375,7 @@ class LabVoiceNarrator {
 
     utterance.onstart = () => {
       if (token !== this.requestSeq) return;
-      this.emit({ status: "speaking", activeKey: key, error: null });
+      this.emit({ status: "speaking", activeKey: key, error: notice });
     };
 
     utterance.onend = () => {
@@ -402,11 +392,13 @@ class LabVoiceNarrator {
       this.emit({
         status: "idle",
         activeKey: null,
-        error: "Device voice could not play audio. Switch to AI Voice instead.",
+        error:
+          notice ||
+          "Device voice could not play audio. Switch to AI Voice instead.",
       });
     };
 
-    this.emit({ status: "speaking", activeKey: key, error: null });
+    this.emit({ status: "speaking", activeKey: key, error: notice });
     synth.speak(utterance);
   }
 
@@ -452,13 +444,25 @@ class LabVoiceNarrator {
       await audio.play();
     } catch (err) {
       if (token !== this.requestSeq) return;
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : "Could not synthesize AI speech.";
+      if (this.isQuotaOrUnavailableError(errMsg)) {
+        this.aiTtsPausedUntil = Date.now() + 15 * 60 * 1000;
+        this.speakWithDeviceVoice(
+          key,
+          stripAudioTags(text),
+          language,
+          token,
+          errMsg,
+        );
+        return;
+      }
       this.emit({
         status: "idle",
         activeKey: null,
-        error:
-          err instanceof Error
-            ? err.message
-            : "Could not synthesize AI speech.",
+        error: errMsg,
       });
     }
   }
@@ -587,13 +591,23 @@ class LabVoiceNarrator {
       if (this.streamAbort === abortCtrl) {
         this.streamAbort = null;
       }
+      const errMsg =
+        err instanceof Error ? err.message : "Could not stream AI speech.";
+      if (this.isQuotaOrUnavailableError(errMsg)) {
+        this.aiTtsPausedUntil = Date.now() + 15 * 60 * 1000;
+        this.speakWithDeviceVoice(
+          key,
+          stripAudioTags(text),
+          language,
+          token,
+          errMsg,
+        );
+        return;
+      }
       this.emit({
         status: "idle",
         activeKey: null,
-        error:
-          err instanceof Error
-            ? err.message
-            : "Could not stream AI speech.",
+        error: errMsg,
       });
     }
   }

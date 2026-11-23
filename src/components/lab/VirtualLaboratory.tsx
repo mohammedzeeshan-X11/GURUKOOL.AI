@@ -35,8 +35,10 @@ import {
   calculateTitrationPh,
   calculateWaveHarmonic,
   DNA_TEMPLATE_STRAND,
+  EMPTY_COMPLETED_QUESTS,
   evaluateDnaMatches,
   getComplementaryBase,
+  INITIAL_EXPERIMENT_STATE,
   LAB_QUESTS,
 } from "../../lab/quests";
 import type {
@@ -63,7 +65,7 @@ const EQUIPMENT_LIST: readonly {
   code: string;
   name: string;
   category: string;
-  discipline: "Physics" | "Chemistry" | "Biology" | "Mathematics";
+  discipline: "Physics" | "Chemistry" | "Biology";
 }[] = [
   { id: "pendulum", code: "EQ-01", name: "Brass Pendulum Rig", category: "Pendulum", discipline: "Physics" },
   { id: "optics", code: "EQ-02", name: "Optical Glass Prism", category: "Ray Optics", discipline: "Physics" },
@@ -72,27 +74,11 @@ const EQUIPMENT_LIST: readonly {
   { id: "electrolysis", code: "EQ-05", name: "Water Electrolysis Cell", category: "Electrolysis", discipline: "Chemistry" },
   { id: "photosynthesis", code: "EQ-06", name: "Aquatic Photosynthesis Rig", category: "Photosynthesis", discipline: "Biology" },
   { id: "microscope", code: "EQ-07", name: "Compound Optical Microscope", category: "Microscope", discipline: "Biology" },
-  { id: "projectile", code: "EQ-08", name: "Parabolic Trajectory Launcher", category: "Projectile", discipline: "Mathematics" },
+  { id: "projectile", code: "EQ-08", name: "Parabolic Trajectory Launcher", category: "Projectile", discipline: "Physics" },
   { id: "boyles", code: "EQ-09", name: "Boyle's Law Gas Piston", category: "Gas Piston", discipline: "Chemistry" },
   { id: "wave", code: "EQ-10", name: "Standing Wave Oscillator", category: "Sound Wave", discipline: "Physics" },
   { id: "dna", code: "EQ-11", name: "DNA Double Helix Model", category: "DNA Helix", discipline: "Biology" },
-  { id: "trig", code: "EQ-12", name: "Trigonometric Unit Circle", category: "Unit Circle", discipline: "Mathematics" },
 ];
-
-const EMPTY_COMPLETED: Record<StationId, boolean> = {
-  pendulum: false,
-  optics: false,
-  titration: false,
-  circuit: false,
-  electrolysis: false,
-  photosynthesis: false,
-  microscope: false,
-  projectile: false,
-  boyles: false,
-  wave: false,
-  dna: false,
-  trig: false,
-};
 
 const PERSPECTIVE_TRANSFORMS: Record<StagePerspective, string> = {
   isometric: "rotateX(11deg) rotateY(-8deg)",
@@ -215,14 +201,14 @@ export function VirtualLaboratory({
   const [dnaRotating, setDnaRotating] = useState(true);
   const [dnaSpinPhase, setDnaSpinPhase] = useState(0);
 
-  // 12: Trig Unit Circle
-  const [trigAngleDeg, setTrigAngleDeg] = useState(30);
-  const [trigSweeping, setTrigSweeping] = useState(false);
-
-  // Gamified Badges across all 12 STEM experiments
+  // Gamified Badges across science experiments
   const [localCalibrated, setLocalCalibrated] = useState<
     Record<StationId, boolean>
-  >(() => externalCompleted ?? { ...EMPTY_COMPLETED });
+  >(() =>
+    externalCompleted
+      ? { ...EMPTY_COMPLETED_QUESTS, ...externalCompleted }
+      : { ...EMPTY_COMPLETED_QUESTS },
+  );
 
   const calibratedSet = externalCompleted ?? localCalibrated;
 
@@ -325,10 +311,6 @@ export function VirtualLaboratory({
         setDnaSpinPhase((prev) => prev + dt * 1.4);
       }
 
-      if (selectedEquipment === "trig" && trigSweeping) {
-        setTrigAngleDeg((prev) => (prev + dt * 36) % 360);
-      }
-
       rafId = requestAnimationFrame(tick);
     };
 
@@ -350,7 +332,6 @@ export function VirtualLaboratory({
     waveRunning,
     waveFreqHz,
     dnaRotating,
-    trigSweeping,
   ]);
 
   const triggerTitrationDrop = useCallback((amountMl: number) => {
@@ -455,8 +436,8 @@ export function VirtualLaboratory({
         return waveRunning && Math.abs(waveHarmonic - 3.0) <= 0.12;
       case "dna":
         return dnaMatches === DNA_TEMPLATE_STRAND.length;
-      case "trig":
-        return Math.abs(trigAngleDeg - 60) <= 2;
+      default:
+        return false;
     }
   }, [
     selectedEquipment,
@@ -479,7 +460,6 @@ export function VirtualLaboratory({
     waveRunning,
     waveHarmonic,
     dnaMatches,
-    trigAngleDeg,
   ]);
 
   useEffect(() => {
@@ -579,21 +559,16 @@ export function VirtualLaboratory({
   const chamberHeightPx = (boylesVolumeMl / 50) * 124;
   const pistonY = 204 - chamberHeightPx;
 
-  // Trig Unit Circle values
-  const trigRad = (trigAngleDeg * Math.PI) / 180;
-  const trigCos = Math.cos(trigRad);
-  const trigSin = Math.sin(trigRad);
-  const trigPtX = 240 + trigCos * 74;
-  const trigPtY = 122 - trigSin * 74;
-
   const activeQuest = LAB_QUESTS[selectedEquipment];
 
   const liveLabState = useMemo<LabExperimentState>(
     () => ({
+      ...INITIAL_EXPERIMENT_STATE,
       pendulum: {
         running: pendulumRunning,
         lengthM: pendulumLength,
         amplitudeDeg: pendulumAngleDeg,
+        gravityMs2: 9.81,
         angleRad: (pendulumPhase * Math.PI) / 180,
         elapsedOscillations: isCurrentCalibrated && selectedEquipment === "pendulum" ? 1 : 0,
         measuredPeriodS: pendulumPeriod,
@@ -637,6 +612,7 @@ export function VirtualLaboratory({
       projectile: {
         angleDeg: projAngleDeg,
         speedMs: projSpeedMs,
+        gravityMs2: 9.81,
         rangeM: projRangeM,
         launchPulse: 0,
         lastLandedRangeM: lastLandedRange,
@@ -655,10 +631,6 @@ export function VirtualLaboratory({
         rotating: dnaRotating,
         templateStrand: [...DNA_TEMPLATE_STRAND],
         pairedStrand: dnaPaired,
-      },
-      trig: {
-        sweeping: trigSweeping,
-        angleDeg: trigAngleDeg,
       },
     }),
     [
@@ -703,29 +675,11 @@ export function VirtualLaboratory({
       waveHarmonic,
       dnaRotating,
       dnaPaired,
-      trigSweeping,
-      trigAngleDeg,
     ],
   );
 
-  const liveLabStateRef = useRef(liveLabState);
-  useEffect(() => {
-    liveLabStateRef.current = liveLabState;
-  }, [liveLabState]);
-
-  // Silently warm up AI voice PCM in the background when switching stations or language so Explain plays instantly
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const script = buildSpokenExplanationScript(
-        selectedEquipment,
-        liveLabStateRef.current,
-        avatar.name,
-        avatar.language,
-      );
-      labVoiceNarrator.prefetch(script, { language: avatar.language });
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [selectedEquipment, avatar.name, avatar.language]);
+  // TTS narration is requested strictly on-demand when the user clicks Explain
+  // to preserve daily Gemini TTS quota.
 
   return (
     <section
@@ -740,7 +694,7 @@ export function VirtualLaboratory({
               Virtual Laboratory
             </span>
             <span aria-hidden="true">·</span>
-            <span>12 STEM Benches (Physics, Chemistry, Biology, Mathematics)</span>
+            <span>Science Workbench Preview (Physics, Chemistry, Biology)</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono tabular-nums text-[#42335C] font-medium">
               {completedCount}/{EQUIPMENT_LIST.length} Completed
@@ -1530,28 +1484,6 @@ export function VirtualLaboratory({
                     </g>
                   ) : null}
 
-                  {/* EQ-12: TRIGONOMETRIC UNIT CIRCLE & PHASOR */}
-                  {selectedEquipment === "trig" ? (
-                    <g>
-                      <rect x="114" y="204" width="252" height="14" rx="3" fill="#3B312B" />
-                      <circle cx="240" cy="122" r="74" fill="#FAF8F5" stroke="#6F4E37" strokeWidth="3" />
-                      <line x1="154" y1="122" x2="326" y2="122" stroke="#C7C4BE" strokeWidth="1.4" />
-                      <line x1="240" y1="36" x2="240" y2="202" stroke="#C7C4BE" strokeWidth="1.4" />
-                      {/* cos θ horizontal leg */}
-                      <line x1="240" y1="122" x2={trigPtX} y2="122" stroke="#6F4E37" strokeWidth="4" />
-                      {/* sin θ vertical leg */}
-                      <line x1={trigPtX} y1="122" x2={trigPtX} y2={trigPtY} stroke="#6C4AB6" strokeWidth="4" />
-                      {/* Rotating Phasor Arm */}
-                      <line x1="240" y1="122" x2={trigPtX} y2={trigPtY} stroke="#231B16" strokeWidth="2.8" />
-                      <circle cx={trigPtX} cy={trigPtY} r="6.5" fill="#6C4AB6" stroke="#FFFFFF" strokeWidth="1.5" />
-                      <text x="382" y="106" textAnchor="middle" fill="#6F4E37" fontSize="11" fontWeight="600" fontFamily="IBM Plex Mono, monospace">
-                        cos {trigAngleDeg.toFixed(0)}°={trigCos.toFixed(2)}
-                      </text>
-                      <text x="382" y="128" textAnchor="middle" fill="#42335C" fontSize="11" fontWeight="600" fontFamily="IBM Plex Mono, monospace">
-                        sin {trigAngleDeg.toFixed(0)}°={trigSin.toFixed(2)}
-                      </text>
-                    </g>
-                  ) : null}
                 </svg>
               </div>
             </div>
@@ -2367,68 +2299,6 @@ export function VirtualLaboratory({
                 </div>
               ) : null}
 
-              {/* 12: Trig Unit Circle */}
-              {selectedEquipment === "trig" ? (
-                <div className="space-y-4">
-                  <label className="block space-y-1.5 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-[#231B16] font-medium">
-                        Phasor Angle (θ)
-                      </span>
-                      <span className="font-mono tabular-nums text-[#6F4E37]">
-                        {Math.round(trigAngleDeg)}° ({(trigRad / Math.PI).toFixed(2)}π rad)
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={360}
-                      step={1}
-                      value={Math.round(trigAngleDeg)}
-                      onChange={(e) => {
-                        setTrigSweeping(false);
-                        setTrigAngleDeg(Number(e.target.value));
-                      }}
-                      className="w-full accent-[#6F4E37]"
-                    />
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border border-[#E5E4E2] bg-[#FAF8F5] px-3.5 py-2.5">
-                      <p className="text-xs text-[#786D65]">cos(θ) Horizontal</p>
-                      <p className="font-mono text-base font-semibold tabular-nums text-[#6F4E37]">
-                        {trigCos.toFixed(3)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-[#DCD3EB] bg-[#F3EFF9] px-3.5 py-2.5">
-                      <p className="text-xs text-[#42335C]">sin(θ) Vertical</p>
-                      <p className="font-mono text-base font-semibold tabular-nums text-[#42335C]">
-                        {trigSin.toFixed(3)}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="md"
-                    onClick={() => {
-                      labAudio.playClick(600);
-                      setTrigSweeping((s) => !s);
-                    }}
-                    className="w-full"
-                  >
-                    {trigSweeping ? (
-                      <>
-                        <Pause className="h-4 w-4 inline mr-1.5" aria-hidden="true" />
-                        Stop Phasor Sweep
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-4 w-4 inline mr-1.5" aria-hidden="true" />
-                        Auto-Sweep 0°–360°
-                      </>
-                    )}
-                  </Button>
-                </div>
-              ) : null}
             </div>
           </div>
 

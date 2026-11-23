@@ -21,9 +21,11 @@ import {
   ChevronRight,
   ChevronUp,
   Compass,
+  DoorOpen,
   Eye,
   Footprints,
   Glasses,
+  Hand,
   LayoutGrid,
   Loader2,
   Minimize2,
@@ -38,6 +40,7 @@ import {
 } from "lucide-react";
 import { useStudentAvatar } from "../../context/StudentAvatarContext";
 import { labAudio } from "../../lab/audio";
+import { buildComplexStations } from "../../lab/complexStations";
 import {
   buildSpokenExplanationScript,
   LAB_LANGUAGE_OPTIONS,
@@ -47,32 +50,88 @@ import { createLabMaterials } from "../../lab/materials";
 import {
   buildProgressSnapshot,
   calculateBoylesPressure,
+  calculateCarbonAlkane,
+  calculateDoubleSlitMetrics,
+  calculateGalvanicMetrics,
+  calculateHaberMetrics,
+  calculateLensImage,
+  calculateMendelOffspring,
+  calculateNeuronMetrics,
   calculateOpticsDeviation,
+  calculatePcrMetrics,
+  calculatePhotoelectricMetrics,
   calculatePhotosynthesisRate,
   calculateProjectileRange,
+  calculateReflexTimeMs,
+  calculateResistorsNetwork,
+  calculateSolenoidFieldMt,
   calculateTitrationPh,
   calculateWaveHarmonic,
+  EMPTY_COMPLETED_QUESTS,
   evaluateDnaMatches,
   evaluateQuests,
   getComplementaryBase,
+  getStationRoom,
   INITIAL_EXPERIMENT_STATE,
   LAB_QUESTS,
+  LAB_ROOMS,
+  PHOTO_METAL_WORK_FUNCTION_EV,
+  ROOM_ORDER,
+  ROOM_STATIONS,
+  STATION_ORDER,
+  STATION_SHORT_LABEL,
+  wavelengthToHex,
 } from "../../lab/quests";
 import { BENCH_POSES, buildLabRoom } from "../../lab/roomGeometry";
 import { buildExperimentStations } from "../../lab/stations";
 import {
   buildStudentAvatar3D,
+  type AvatarLabAction,
   type StudentAvatar3DController,
 } from "../../lab/studentAvatar3d";
 import type {
+  DisplacementMetal,
   DnaBase,
   LabExperimentState,
+  LabRoomId,
   LabViewMode,
+  MendelGenotype,
   MicroscopeSpecimen,
+  PhotoMetal,
   StationId,
 } from "../../lab/types";
 import type { TutorLanguage } from "../../types/navigation";
 import { StudentAvatarSvg } from "../avatar/StudentAvatarSvg";
+
+function getStationHandAction(station: StationId): AvatarLabAction {
+  switch (station) {
+    case "titration":
+    case "electrolysis":
+    case "displacement":
+    case "photosynthesis":
+    case "haber":
+    case "galvanic":
+    case "pcr":
+    case "mendel":
+      return "pour";
+    case "optics":
+    case "microscope":
+    case "lens":
+    case "doubleslit":
+    case "dna":
+      return "inspect";
+    case "circuit":
+    case "electromagnet":
+    case "resistors":
+    case "projectile":
+    case "reflex":
+    case "photoelectric":
+    case "neuron":
+      return "switch";
+    default:
+      return "adjust";
+  }
+}
 
 interface VirtualLabViewportProps {
   initialStation?: StationId;
@@ -80,51 +139,6 @@ interface VirtualLabViewportProps {
   onQuestsChange?: (completed: Record<StationId, boolean>) => void;
   onExitLab: () => void;
 }
-
-const STATION_ORDER: readonly StationId[] = [
-  "pendulum",
-  "optics",
-  "titration",
-  "circuit",
-  "electrolysis",
-  "photosynthesis",
-  "microscope",
-  "projectile",
-  "boyles",
-  "wave",
-  "dna",
-  "trig",
-];
-
-const STATION_SHORT_LABEL: Record<StationId, string> = {
-  pendulum: "Pendulum",
-  optics: "Ray Optics",
-  titration: "Titration",
-  circuit: "Ohm's Circuit",
-  electrolysis: "Electrolysis",
-  photosynthesis: "Photosynthesis",
-  microscope: "Microscope",
-  projectile: "Projectile",
-  boyles: "Boyle's Law",
-  wave: "Sound Wave",
-  dna: "DNA Helix",
-  trig: "Unit Circle",
-};
-
-const EMPTY_COMPLETED: Record<StationId, boolean> = {
-  pendulum: false,
-  optics: false,
-  titration: false,
-  circuit: false,
-  electrolysis: false,
-  photosynthesis: false,
-  microscope: false,
-  projectile: false,
-  boyles: false,
-  wave: false,
-  dna: false,
-  trig: false,
-};
 
 const _walkForward = new THREE.Vector3();
 const _walkRight = new THREE.Vector3();
@@ -170,7 +184,10 @@ export function VirtualLabViewport({
 
   const voice = useVoiceNarrator();
   const [activeStation, setActiveStation] = useState<StationId>(initialStation);
-  const [viewMode, setViewMode] = useState<LabViewMode>("orbit");
+  const [activeRoom, setActiveRoom] = useState<LabRoomId>(() =>
+    getStationRoom(initialStation),
+  );
+  const [viewMode, setViewMode] = useState<LabViewMode>("kid-control");
   const [vrStereo, setVrStereo] = useState(false);
   const [arBackdropActive, setArBackdropActive] = useState(false);
   const [dockCollapsed, setDockCollapsed] = useState(false);
@@ -180,6 +197,8 @@ export function VirtualLabViewport({
   const [showHint, setShowHint] = useState(false);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [contextLost, setContextLost] = useState(false);
+  const [sprintToggle, setSprintToggle] = useState(false);
+  const [mouseLookActive, setMouseLookActive] = useState(false);
 
   const [xrSupport, setXrSupport] = useState<{ vr: boolean; ar: boolean }>({
     vr: false,
@@ -191,13 +210,19 @@ export function VirtualLabViewport({
   );
   const [completedQuests, setCompletedQuests] = useState<
     Record<StationId, boolean>
-  >(() => externalCompleted ?? { ...EMPTY_COMPLETED });
+  >(() =>
+    externalCompleted
+      ? { ...EMPTY_COMPLETED_QUESTS, ...externalCompleted }
+      : { ...EMPTY_COMPLETED_QUESTS },
+  );
   const [questBanner, setQuestBanner] = useState<string | null>(null);
 
   const activeStationRef = useRef<StationId>(activeStation);
+  const activeRoomRef = useRef<LabRoomId>(activeRoom);
   const viewModeRef = useRef<LabViewMode>(viewMode);
   const vrStereoRef = useRef(vrStereo);
   const voiceStatusRef = useRef(voice.status);
+  const sprintToggleRef = useRef(sprintToggle);
   const avatarManualRef = useRef(false);
   const floorWalkTargetRef = useRef<THREE.Vector3 | null>(null);
   const floorWalkDestVec = useRef(new THREE.Vector3());
@@ -205,6 +230,7 @@ export function VirtualLabViewport({
   const completedQuestsRef = useRef(completedQuests);
   const keysPressedRef = useRef<Record<string, boolean>>({});
   const walkPadRef = useRef({ forward: 0, strafe: 0, turn: 0 });
+  const cycleCameraViewRef = useRef<() => void>(() => {});
 
   const cameraTransitionRef = useRef<{
     active: boolean;
@@ -222,10 +248,16 @@ export function VirtualLabViewport({
     setArIsolation: (enabled: boolean, station: StationId) => void;
     setTransparentBackground: (transparent: boolean) => void;
     focusStation: (station: StationId) => void;
-    enterWalkMode: (station: StationId, mode: "walk" | "kid-control" | "vr-preview") => void;
+    enterWalkMode: (
+      station: StationId,
+      mode: "walk" | "kid-control" | "vr-preview",
+      preservePosition?: boolean,
+    ) => void;
     exitToOrbit: (station: StationId) => void;
     zoomBy: (dir: -1 | 1) => void;
     triggerActiveAction: () => void;
+    triggerJump: () => void;
+    togglePointerLock: () => void;
   } | null>(null);
 
   useEffect(() => {
@@ -233,8 +265,16 @@ export function VirtualLabViewport({
   }, [activeStation]);
 
   useEffect(() => {
+    activeRoomRef.current = activeRoom;
+  }, [activeRoom]);
+
+  useEffect(() => {
     viewModeRef.current = viewMode;
   }, [viewMode]);
+
+  useEffect(() => {
+    sprintToggleRef.current = sprintToggle;
+  }, [sprintToggle]);
 
   useEffect(() => {
     vrStereoRef.current = vrStereo;
@@ -244,8 +284,17 @@ export function VirtualLabViewport({
     voiceStatusRef.current = voice.status;
   }, [voice.status]);
 
+  const isFirstExpRenderRef = useRef(true);
   useEffect(() => {
     experimentStateRef.current = experimentState;
+    if (isFirstExpRenderRef.current) {
+      isFirstExpRenderRef.current = false;
+      return;
+    }
+    studentAvatar3dRef.current?.triggerAction(
+      getStationHandAction(activeStationRef.current),
+      1.35,
+    );
   }, [experimentState]);
 
   useEffect(() => {
@@ -284,19 +333,8 @@ export function VirtualLabViewport({
     speakStationRef.current = speakStation;
   }, [speakStation]);
 
-  // Pre-warm natural voice PCM in the background when focusing a station or changing language
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const script = buildSpokenExplanationScript(
-        activeStation,
-        experimentStateRef.current,
-        avatar.name,
-        avatar.language,
-      );
-      labVoiceNarrator.prefetch(script, { language: avatar.language });
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [activeStation, avatar.name, avatar.language]);
+  // TTS narration is requested strictly on-demand when the user clicks Explain (E)
+  // to avoid consuming daily Gemini TTS quota in the background.
 
   useEffect(() => {
     const { completed, newlyCompleted } = evaluateQuests(
@@ -308,6 +346,7 @@ export function VirtualLabViewport({
       setCompletedQuests(completed);
       onQuestsChange?.(completed);
       labAudio.playQuestComplete();
+      studentAvatar3dRef.current?.triggerAction("celebrate", 2.2);
       const firstQuest = LAB_QUESTS[newlyCompleted[0]];
       setQuestBanner(
         `Quest Completed: ${firstQuest.title} (+${firstQuest.xpReward} XP · ${firstQuest.badgeTitle})`,
@@ -376,11 +415,28 @@ export function VirtualLabViewport({
         setStationMenuOpen(false);
         setDockCollapsed((prev) => !prev);
       }
-      if (e.code === "KeyE" || e.code === "KeyV") {
+      if (e.code === "KeyE") {
         speakStationRef.current();
       }
-      if (e.code === "Space" && viewModeRef.current === "vr-preview") {
+      if (e.code === "KeyF") {
         xrControllerRef.current?.triggerActiveAction();
+      }
+      if (e.code === "KeyV") {
+        cycleCameraViewRef.current();
+      }
+      if (e.code === "KeyM") {
+        xrControllerRef.current?.togglePointerLock();
+      }
+      if (e.code === "Space") {
+        if (viewModeRef.current === "vr-preview") {
+          xrControllerRef.current?.triggerActiveAction();
+        } else if (
+          viewModeRef.current === "kid-control" ||
+          viewModeRef.current === "walk" ||
+          viewModeRef.current === "orbit"
+        ) {
+          xrControllerRef.current?.triggerJump();
+        }
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -462,9 +518,19 @@ export function VirtualLabViewport({
     canvas.addEventListener("webglcontextrestored", onContextRestored);
 
     const scene = new THREE.Scene();
-    const ivoryBg = new THREE.Color(0xfaf8f5);
-    scene.background = ivoryBg;
-    scene.fog = new THREE.Fog(0xfaf8f5, 11, 24);
+    const roomBgColors: Record<LabRoomId, THREE.Color> = {
+      physics: new THREE.Color(LAB_ROOMS.physics.bgHex),
+      chemistry: new THREE.Color(LAB_ROOMS.chemistry.bgHex),
+      biology: new THREE.Color(LAB_ROOMS.biology.bgHex),
+    };
+    const applyRoomBackdrop = (roomId: LabRoomId) => {
+      const hex = LAB_ROOMS[roomId].bgHex;
+      scene.background = roomBgColors[roomId];
+      scene.fog = new THREE.Fog(hex, 13, 27);
+      renderer.setClearColor(hex, 1);
+      renderer.setClearAlpha(1);
+    };
+    applyRoomBackdrop(activeRoomRef.current);
 
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     const roomEnvTexture = pmremGenerator.fromScene(
@@ -493,7 +559,7 @@ export function VirtualLabViewport({
     keyLight.shadow.mapSize.height = 1024;
     keyLight.shadow.camera.near = 0.5;
     keyLight.shadow.camera.far = 22;
-    const d = 8.0;
+    const d = 9.0;
     keyLight.shadow.camera.left = -d;
     keyLight.shadow.camera.right = d;
     keyLight.shadow.camera.top = d;
@@ -509,7 +575,14 @@ export function VirtualLabViewport({
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
     const materials = createLabMaterials(isSoftwareGl, maxAnisotropy);
     const room = buildLabRoom(materials, maxAnisotropy);
+    room.setActiveRoom(activeRoomRef.current);
     const stations = buildExperimentStations(room.benchGroups, materials);
+    const complexStations = buildComplexStations(
+      room.benchGroups,
+      materials,
+      materials.opticalGlass,
+      maxAnisotropy,
+    );
     const studentAvatar3d = buildStudentAvatar3D(avatarProfileRef.current);
     studentAvatar3d.group.position.copy(
       AVATAR_BENCH_SPOTS[activeStationRef.current],
@@ -519,7 +592,10 @@ export function VirtualLabViewport({
     scene.add(room.benchesRoot);
     scene.add(studentAvatar3d.group);
 
-    const interactiveProxies: THREE.Mesh[] = [...room.hitProxies];
+    const interactiveProxies: THREE.Mesh[] = [
+      ...room.hitProxies,
+      ...room.portalProxies,
+    ];
 
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
@@ -546,10 +622,13 @@ export function VirtualLabViewport({
     floorMarker.visible = false;
     scene.add(floorMarker);
 
+    const getRoomWalkBound = () => 7.75;
+
     const clampAvatarToLabFloor = (pos: THREE.Vector3) => {
-      pos.x = THREE.MathUtils.clamp(pos.x, -6.95, 6.95);
-      pos.z = THREE.MathUtils.clamp(pos.z, -6.95, 6.95);
-      for (const id of STATION_ORDER) {
+      const bound = getRoomWalkBound();
+      pos.x = THREE.MathUtils.clamp(pos.x, -bound, bound);
+      pos.z = THREE.MathUtils.clamp(pos.z, -bound, bound);
+      for (const id of ROOM_STATIONS[activeRoomRef.current]) {
         const bp = BENCH_POSES[id].position;
         const dx = pos.x - bp.x;
         const dz = pos.z - bp.z;
@@ -561,14 +640,14 @@ export function VirtualLabViewport({
           pos.z = bp.z + (dz / dist) * minR;
         }
       }
-      pos.x = THREE.MathUtils.clamp(pos.x, -6.95, 6.95);
-      pos.z = THREE.MathUtils.clamp(pos.z, -6.95, 6.95);
+      pos.x = THREE.MathUtils.clamp(pos.x, -bound, bound);
+      pos.z = THREE.MathUtils.clamp(pos.z, -bound, bound);
     };
 
     const syncNearestStationFromAvatar = (pos: THREE.Vector3) => {
       let nearest: StationId | null = null;
       let bestDistSq = 1.85 * 1.85;
-      for (const id of STATION_ORDER) {
+      for (const id of ROOM_STATIONS[activeRoomRef.current]) {
         const bp = BENCH_POSES[id].position;
         const dx = pos.x - bp.x;
         const dz = pos.z - bp.z;
@@ -618,9 +697,12 @@ export function VirtualLabViewport({
     let lastPointerX = 0;
     let lastPointerY = 0;
     let walkYaw = 0;
-    let walkPitch = -0.18;
-    let kidFollowDist = 2.45;
-    const walkPos = new THREE.Vector3(0, 1.65, 3.2);
+    let walkPitch = -0.22;
+    let kidFollowDist = 2.35;
+    let avatarJumpY = 0;
+    let avatarJumpVel = 0;
+    let firstPersonBobPhase = 0;
+    const walkPos = new THREE.Vector3(0, 1.24, 3.2);
 
     const isFreeLookMode = (mode: LabViewMode) =>
       mode === "walk" || mode === "kid-control" || mode === "vr-preview";
@@ -642,9 +724,9 @@ export function VirtualLabViewport({
         controls.update();
       } else if (mode === "kid-control") {
         kidFollowDist = THREE.MathUtils.clamp(
-          kidFollowDist + dir * 0.45,
-          1.15,
-          7.5,
+          kidFollowDist + dir * 0.42,
+          1.1,
+          6.5,
         );
       } else if (mode === "walk" || mode === "vr-preview") {
         camera.fov = THREE.MathUtils.clamp(camera.fov + dir * 6, 34, 84);
@@ -655,23 +737,58 @@ export function VirtualLabViewport({
     const alignPoseToStation = (
       station: StationId,
       targetMode: "walk" | "kid-control" | "vr-preview",
+      preservePosition = false,
     ) => {
       const pose = BENCH_POSES[station];
+      const walkClamp = getRoomWalkBound() + 0.15;
+      const avatarPos = studentAvatar3d.getPosition();
+
       if (targetMode === "kid-control") {
-        const avatarPos = studentAvatar3d.getPosition();
-        const dx = pose.cameraTarget.x - avatarPos.x;
-        const dz = pose.cameraTarget.z - avatarPos.z;
-        walkYaw = Math.atan2(-dx, -dz);
-        walkPitch = -0.26;
-        camera.fov = 58;
+        if (!preservePosition) {
+          const dx = pose.cameraTarget.x - avatarPos.x;
+          const dz = pose.cameraTarget.z - avatarPos.z;
+          walkYaw = Math.atan2(-dx, -dz);
+          walkPitch = -0.22;
+        } else {
+          walkPitch = THREE.MathUtils.clamp(walkPitch, -0.78, 0.28);
+        }
+        camera.fov = 60;
         camera.updateProjectionMatrix();
         camera.rotation.order = "XYZ";
         camera.rotation.z = 0;
+      } else if (targetMode === "walk") {
+        if (preservePosition) {
+          walkPos.set(
+            THREE.MathUtils.clamp(avatarPos.x, -walkClamp, walkClamp),
+            1.22 + avatarJumpY,
+            THREE.MathUtils.clamp(avatarPos.z, -walkClamp, walkClamp),
+          );
+          walkPitch = THREE.MathUtils.clamp(walkPitch, -0.75, 0.6);
+        } else {
+          walkPos.set(
+            THREE.MathUtils.clamp(avatarPos.x, -walkClamp, walkClamp),
+            1.22,
+            THREE.MathUtils.clamp(avatarPos.z, -walkClamp, walkClamp),
+          );
+          const dx = pose.cameraTarget.x - walkPos.x;
+          const dy = pose.cameraTarget.y - walkPos.y;
+          const dz = pose.cameraTarget.z - walkPos.z;
+          const horiz = Math.hypot(dx, dz) || 1;
+          walkYaw = Math.atan2(-dx, -dz);
+          walkPitch = THREE.MathUtils.clamp(Math.atan2(dy, horiz), -0.75, 0.55);
+        }
+        camera.fov = 64;
+        camera.updateProjectionMatrix();
+        camera.position.copy(walkPos);
+        camera.rotation.order = "YXZ";
+        camera.rotation.y = walkYaw;
+        camera.rotation.x = walkPitch;
+        camera.rotation.z = 0;
       } else {
         walkPos.set(
-          THREE.MathUtils.clamp(pose.cameraPosition.x, -7.1, 7.1),
-          targetMode === "vr-preview" ? 1.62 : 1.65,
-          THREE.MathUtils.clamp(pose.cameraPosition.z, -7.1, 7.1),
+          THREE.MathUtils.clamp(pose.cameraPosition.x, -walkClamp, walkClamp),
+          1.62,
+          THREE.MathUtils.clamp(pose.cameraPosition.z, -walkClamp, walkClamp),
         );
         const dx = pose.cameraTarget.x - walkPos.x;
         const dy = pose.cameraTarget.y - walkPos.y;
@@ -679,7 +796,7 @@ export function VirtualLabViewport({
         const horiz = Math.hypot(dx, dz) || 1;
         walkYaw = Math.atan2(-dx, -dz);
         walkPitch = THREE.MathUtils.clamp(Math.atan2(dy, horiz), -0.75, 0.55);
-        camera.fov = targetMode === "vr-preview" ? 76 : 58;
+        camera.fov = 76;
         camera.updateProjectionMatrix();
         camera.position.copy(walkPos);
         camera.rotation.order = "YXZ";
@@ -689,14 +806,31 @@ export function VirtualLabViewport({
       }
     };
 
+    // Align initial 3rd-person game camera right behind the avatar on mount
+    if (viewModeRef.current === "kid-control") {
+      controls.enabled = false;
+      alignPoseToStation(activeStationRef.current, "kid-control", false);
+    }
+
     const focusStation = (station: StationId) => {
+      const targetRoom = getStationRoom(station);
+      const roomChanged = targetRoom !== activeRoomRef.current;
+      const isArMode =
+        viewModeRef.current === "ar-camera" || viewModeRef.current === "ar-xr";
+
+      if (roomChanged) {
+        activeRoomRef.current = targetRoom;
+        setActiveRoom(targetRoom);
+        studentAvatar3d.group.position.copy(AVATAR_BENCH_SPOTS[station]);
+      }
+
+      room.setActiveRoom(targetRoom, isArMode ? station : null);
+      if (!isArMode) {
+        applyRoomBackdrop(targetRoom);
+      }
+
       const pose = BENCH_POSES[station];
       arFloorGrid.position.set(pose.position.x, 0.008, pose.position.z);
-      if (viewModeRef.current === "ar-camera" || viewModeRef.current === "ar-xr") {
-        STATION_ORDER.forEach((id) => {
-          room.benchGroups[id].visible = id === station;
-        });
-      }
       avatarManualRef.current = false;
       floorWalkTargetRef.current = null;
       floorMarker.visible = false;
@@ -711,6 +845,7 @@ export function VirtualLabViewport({
     };
 
     const triggerStationQuickAction = (station: StationId) => {
+      studentAvatar3d.triggerAction(getStationHandAction(station), 1.45);
       if (station === "pendulum") {
         labAudio.playClick(560);
         setExperimentState((prev) => ({
@@ -840,11 +975,115 @@ export function VirtualLabViewport({
           ...prev,
           dna: { ...prev.dna, rotating: !prev.dna.rotating },
         }));
-      } else if (station === "trig") {
-        labAudio.playClick(600);
+      } else if (station === "lens") {
+        labAudio.playClick(610);
         setExperimentState((prev) => ({
           ...prev,
-          trig: { ...prev.trig, sweeping: !prev.trig.sweeping },
+          lens: { ...prev.lens, lampOn: !prev.lens.lampOn },
+        }));
+      } else if (station === "electromagnet") {
+        labAudio.playClick(640);
+        setExperimentState((prev) => ({
+          ...prev,
+          electromagnet: {
+            ...prev.electromagnet,
+            ironCoreInserted: !prev.electromagnet.ironCoreInserted,
+          },
+        }));
+      } else if (station === "resistors") {
+        labAudio.playClick(620);
+        setExperimentState((prev) => ({
+          ...prev,
+          resistors: {
+            ...prev.resistors,
+            mode: prev.resistors.mode === "series" ? "parallel" : "series",
+          },
+        }));
+      } else if (station === "displacement") {
+        labAudio.playDrop();
+        setExperimentState((prev) => ({
+          ...prev,
+          displacement: {
+            ...prev.displacement,
+            immersed: !prev.displacement.immersed,
+          },
+        }));
+      } else if (station === "carbon") {
+        labAudio.playClick(590);
+        setExperimentState((prev) => {
+          const nextC = ((prev.carbon.carbons % 4) + 1) as 1 | 2 | 3 | 4;
+          return {
+            ...prev,
+            carbon: { ...prev.carbon, carbons: nextC },
+          };
+        });
+      } else if (station === "reflex") {
+        labAudio.playClick(740);
+        setExperimentState((prev) => ({
+          ...prev,
+          reflex: {
+            ...prev.reflex,
+            triggerPulse: prev.reflex.triggerPulse + 1,
+          },
+        }));
+      } else if (station === "mendel") {
+        labAudio.playClick(570);
+        setExperimentState((prev) => ({
+          ...prev,
+          mendel: { ...prev.mendel, grown: !prev.mendel.grown },
+        }));
+      } else if (station === "doubleslit") {
+        labAudio.playClick(640);
+        setExperimentState((prev) => ({
+          ...prev,
+          doubleslit: {
+            ...prev.doubleslit,
+            laserOn: !prev.doubleslit.laserOn,
+          },
+        }));
+      } else if (station === "photoelectric") {
+        labAudio.playClick(680);
+        setExperimentState((prev) => {
+          const nextMetal: PhotoMetal =
+            prev.photoelectric.metal === "Cs"
+              ? "Na"
+              : prev.photoelectric.metal === "Na"
+                ? "Zn"
+                : "Cs";
+          return {
+            ...prev,
+            photoelectric: { ...prev.photoelectric, metal: nextMetal },
+          };
+        });
+      } else if (station === "haber") {
+        labAudio.playClick(610);
+        setExperimentState((prev) => ({
+          ...prev,
+          haber: { ...prev.haber, catalystOn: !prev.haber.catalystOn },
+        }));
+      } else if (station === "galvanic") {
+        labAudio.playDrop();
+        setExperimentState((prev) => ({
+          ...prev,
+          galvanic: {
+            ...prev.galvanic,
+            saltBridgeInserted: !prev.galvanic.saltBridgeInserted,
+          },
+        }));
+      } else if (station === "neuron") {
+        labAudio.playClick(740);
+        setExperimentState((prev) => ({
+          ...prev,
+          neuron: {
+            ...prev.neuron,
+            firePulse: prev.neuron.firePulse + 1,
+          },
+        }));
+      } else if (station === "pcr") {
+        labAudio.playClick(630);
+        setExperimentState((prev) => ({
+          ...prev,
+          pcr: { ...prev.pcr, running: !prev.pcr.running },
         }));
       }
     };
@@ -863,9 +1102,31 @@ export function VirtualLabViewport({
       pointerNdc.y = -(localY / (rect.height || 1)) * 2 + 1;
     };
 
+    const isObjectVisibleInHierarchy = (obj: THREE.Object3D): boolean => {
+      let curr: THREE.Object3D | null = obj;
+      while (curr) {
+        if (!curr.visible) return false;
+        curr = curr.parent;
+      }
+      return true;
+    };
+
     const findVisibleStationHit = () => {
       const hits = raycaster.intersectObjects(interactiveProxies, false);
-      return hits.find((h) => h.object.parent?.visible !== false);
+      return hits.find((h) => isObjectVisibleInHierarchy(h.object));
+    };
+
+    const enterRoomFromPortal = (targetRoom: LabRoomId) => {
+      const destStation = LAB_ROOMS[targetRoom].defaultStation;
+      labAudio.playClick(660);
+      activeStationRef.current = destStation;
+      setActiveStation(destStation);
+      setShowHint(false);
+      setStationMenuOpen(false);
+      focusStation(destStation);
+      setStatusNotice(
+        `Entered ${LAB_ROOMS[targetRoom].name} (${LAB_ROOMS[targetRoom].stationRange})`,
+      );
     };
 
     const selectStationFromRay = (clientX: number, clientY: number): boolean => {
@@ -873,6 +1134,13 @@ export function VirtualLabViewport({
       raycaster.setFromCamera(pointerNdc, camera);
       const hit = findVisibleStationHit();
       if (hit) {
+        const portalTarget = hit.object.userData.targetRoom as
+          | LabRoomId
+          | undefined;
+        if (portalTarget) {
+          enterRoomFromPortal(portalTarget);
+          return true;
+        }
         const hitStation = hit.object.userData.stationId as
           | StationId
           | undefined;
@@ -894,10 +1162,14 @@ export function VirtualLabViewport({
       if (viewModeRef.current !== "kid-control") {
         return;
       }
+      const floorLimit = getRoomWalkBound() + 0.05;
       setPointerNdcFromClient(clientX, clientY);
       raycaster.setFromCamera(pointerNdc, camera);
       if (raycaster.ray.intersectPlane(_floorPlane, _floorHit)) {
-        if (Math.abs(_floorHit.x) <= 7.0 && Math.abs(_floorHit.z) <= 7.0) {
+        if (
+          Math.abs(_floorHit.x) <= floorLimit &&
+          Math.abs(_floorHit.z) <= floorLimit
+        ) {
           clampAvatarToLabFloor(_floorHit);
           floorWalkDestVec.current.copy(_floorHit);
           floorWalkTargetRef.current = floorWalkDestVec.current;
@@ -928,14 +1200,16 @@ export function VirtualLabViewport({
 
     let lastHoverCheck = 0;
     const onPointerMove = (e: PointerEvent) => {
-      const dx = e.clientX - lastPointerX;
-      const dy = e.clientY - lastPointerY;
-      if (isDraggingLook && isFreeLookMode(viewModeRef.current)) {
-        walkYaw -= dx * 0.0055;
+      const isLocked = document.pointerLockElement === canvas;
+      const dx = isLocked ? e.movementX : e.clientX - lastPointerX;
+      const dy = isLocked ? e.movementY : e.clientY - lastPointerY;
+      if ((isDraggingLook || isLocked) && isFreeLookMode(viewModeRef.current)) {
+        const sens = isLocked ? 0.0026 : 0.0055;
+        walkYaw -= dx * sens;
         walkPitch = THREE.MathUtils.clamp(
-          walkPitch - dy * 0.0045,
+          walkPitch - dy * (sens * 0.85),
           -0.85,
-          viewModeRef.current === "kid-control" ? 0.25 : 0.65,
+          viewModeRef.current === "kid-control" ? 0.28 : 0.65,
         );
       } else {
         const now = performance.now();
@@ -950,6 +1224,11 @@ export function VirtualLabViewport({
       lastPointerX = e.clientX;
       lastPointerY = e.clientY;
     };
+
+    const onPointerLockChange = () => {
+      setMouseLookActive(document.pointerLockElement === canvas);
+    };
+    document.addEventListener("pointerlockchange", onPointerLockChange);
 
     const onPointerUp = (e: PointerEvent) => {
       const wasDraggingWalk = isDraggingLook;
@@ -1013,9 +1292,16 @@ export function VirtualLabViewport({
       _rayOrigin.setFromMatrixPosition(event.target.matrixWorld);
       _rayDir.set(0, 0, -1).applyMatrix4(_tempMatrix);
       raycaster.set(_rayOrigin, _rayDir);
-      const hits = raycaster.intersectObjects(interactiveProxies, false);
-      if (hits.length > 0) {
-        const hitStation = hits[0].object.userData.stationId as
+      const hit = findVisibleStationHit();
+      if (hit) {
+        const portalTarget = hit.object.userData.targetRoom as
+          | LabRoomId
+          | undefined;
+        if (portalTarget) {
+          enterRoomFromPortal(portalTarget);
+          return;
+        }
+        const hitStation = hit.object.userData.stationId as
           | StationId
           | undefined;
         if (hitStation) {
@@ -1044,11 +1330,11 @@ export function VirtualLabViewport({
     let wasStereoRendered = false;
     let pendingElectroH2 = 0;
     let electroSyncTimer = 0;
-    let trigSyncTimer = 0;
-    let pendingTrigDelta = 0;
+    let pendingDispDelta = 0;
+    let dispSyncTimer = 0;
 
     const stepSimulation = (delta: number, elapsed: number) => {
-      STATION_ORDER.forEach((id) => {
+      ROOM_STATIONS[activeRoomRef.current].forEach((id) => {
         const ringMat = room.selectionRings[id]
           .material as THREE.MeshStandardMaterial;
         const isCurrent = id === activeStationRef.current;
@@ -1068,8 +1354,20 @@ export function VirtualLabViewport({
         walkPadRef.current.strafe;
       const turnRate =
         ((keys["KeyQ"] ? 1 : 0) + (walkPadRef.current.turn < 0 ? 1 : 0)) -
-        (walkPadRef.current.turn > 0 ? 1 : 0);
-      const sprinting = Boolean(keys["ShiftLeft"] || keys["ShiftRight"]);
+        ((keys["KeyR"] ? 1 : 0) + (walkPadRef.current.turn > 0 ? 1 : 0));
+      const sprinting = Boolean(
+        keys["ShiftLeft"] || keys["ShiftRight"] || sprintToggleRef.current,
+      );
+
+      // Game Jump Physics (parabolic hop with gravity)
+      if (avatarJumpY > 0 || avatarJumpVel !== 0) {
+        avatarJumpY += avatarJumpVel * delta;
+        avatarJumpVel -= 13.5 * delta;
+        if (avatarJumpY <= 0) {
+          avatarJumpY = 0;
+          avatarJumpVel = 0;
+        }
+      }
 
       let avatarMoveX = 0;
       let avatarMoveZ = 0;
@@ -1077,7 +1375,7 @@ export function VirtualLabViewport({
       if (currentMode === "kid-control") {
         controls.enabled = false;
         if (turnRate !== 0) {
-          walkYaw += turnRate * 1.75 * delta;
+          walkYaw += turnRate * 1.85 * delta;
         }
         if (camera.rotation.order !== "XYZ") {
           camera.rotation.order = "XYZ";
@@ -1096,7 +1394,7 @@ export function VirtualLabViewport({
           avatarMoveX /= len;
           avatarMoveZ /= len;
 
-          const speed = 2.9 * (sprinting ? 1.55 : 1.0) * delta;
+          const speed = 3.1 * (sprinting ? 1.6 : 1.0) * delta;
           avatarPos.x += avatarMoveX * speed;
           avatarPos.z += avatarMoveZ * speed;
           clampAvatarToLabFloor(avatarPos);
@@ -1116,43 +1414,78 @@ export function VirtualLabViewport({
           }
         }
 
+        const camClamp = getRoomWalkBound() + 0.4;
         const pitchCos = Math.cos(walkPitch);
         _followCamPos.set(
           THREE.MathUtils.clamp(
             avatarPos.x + Math.sin(walkYaw) * pitchCos * kidFollowDist,
-            -7.35,
-            7.35,
+            -camClamp,
+            camClamp,
           ),
           THREE.MathUtils.clamp(
-            0.95 - Math.sin(walkPitch) * Math.max(1.6, kidFollowDist * 0.85),
+            1.02 + avatarJumpY * 0.55 - Math.sin(walkPitch) * Math.max(1.55, kidFollowDist * 0.85),
             0.52,
             4.6,
           ),
           THREE.MathUtils.clamp(
             avatarPos.z + Math.cos(walkYaw) * pitchCos * kidFollowDist,
-            -7.35,
-            7.35,
+            -camClamp,
+            camClamp,
           ),
         );
-        _followLookTarget.set(avatarPos.x, 0.85, avatarPos.z);
+        _followLookTarget.set(avatarPos.x, 0.92 + avatarJumpY * 0.6, avatarPos.z);
         camera.position.lerp(_followCamPos, 1 - Math.exp(-12 * delta));
         camera.lookAt(_followLookTarget);
       } else if (currentMode === "walk" || currentMode === "vr-preview") {
         controls.enabled = false;
         if (turnRate !== 0) {
-          walkYaw += turnRate * 1.65 * delta;
+          walkYaw += turnRate * 1.75 * delta;
         }
-        if (moveForward !== 0 || moveStrafe !== 0) {
-          const speed = 3.2 * (sprinting ? 1.55 : 1.0) * delta;
+        const avatarPos = studentAvatar3d.getPosition();
+        const isMoving = moveForward !== 0 || moveStrafe !== 0;
+        if (isMoving) {
+          avatarManualRef.current = true;
+          floorWalkTargetRef.current = null;
+          floorMarker.visible = false;
+          const speed = 3.25 * (sprinting ? 1.6 : 1.0) * delta;
           _walkForward.set(-Math.sin(walkYaw), 0, -Math.cos(walkYaw));
           _walkRight.set(Math.cos(walkYaw), 0, -Math.sin(walkYaw));
-          walkPos.addScaledVector(_walkForward, moveForward * speed);
-          walkPos.addScaledVector(_walkRight, moveStrafe * speed);
-          walkPos.x = THREE.MathUtils.clamp(walkPos.x, -7.1, 7.1);
-          walkPos.z = THREE.MathUtils.clamp(walkPos.z, -7.1, 7.1);
-          syncNearestStationFromAvatar(walkPos);
+          avatarMoveX = _walkForward.x * moveForward + _walkRight.x * moveStrafe;
+          avatarMoveZ = _walkForward.z * moveForward + _walkRight.z * moveStrafe;
+          const len = Math.hypot(avatarMoveX, avatarMoveZ) || 1;
+          avatarMoveX /= len;
+          avatarMoveZ /= len;
+
+          if (currentMode === "walk") {
+            avatarPos.x += avatarMoveX * speed;
+            avatarPos.z += avatarMoveZ * speed;
+            clampAvatarToLabFloor(avatarPos);
+            studentAvatar3d.group.rotation.y = Math.atan2(avatarMoveX, avatarMoveZ);
+            firstPersonBobPhase += delta * (sprinting ? 13 : 9);
+            syncNearestStationFromAvatar(avatarPos);
+          } else {
+            const walkClamp = getRoomWalkBound() + 0.15;
+            walkPos.x = THREE.MathUtils.clamp(
+              walkPos.x + avatarMoveX * speed,
+              -walkClamp,
+              walkClamp,
+            );
+            walkPos.z = THREE.MathUtils.clamp(
+              walkPos.z + avatarMoveZ * speed,
+              -walkClamp,
+              walkClamp,
+            );
+            syncNearestStationFromAvatar(walkPos);
+          }
         }
-        camera.position.lerp(walkPos, 1 - Math.exp(-16 * delta));
+        if (currentMode === "walk") {
+          const headBob =
+            isMoving && avatarJumpY <= 0.01
+              ? Math.sin(firstPersonBobPhase) * 0.036
+              : 0;
+          walkPos.set(avatarPos.x, 1.22 + avatarJumpY + headBob, avatarPos.z);
+        }
+        camera.position.lerp(walkPos, 1 - Math.exp(-18 * delta));
         camera.rotation.order = "YXZ";
         camera.rotation.y = walkYaw;
         camera.rotation.x = walkPitch;
@@ -1210,11 +1543,19 @@ export function VirtualLabViewport({
         oscillationCompleted,
         electrolysisH2Delta,
         projectileLandedRange,
+        displacementProgressDelta,
+        reflexCompletedMs,
       } = stations.update(
         experimentStateRef.current,
         delta,
         elapsed,
         activeStationRef.current,
+      );
+
+      const { neuronPeakRecordedMv, pcrPhaseChanged } = complexStations.update(
+        experimentStateRef.current,
+        delta,
+        elapsed,
       );
 
       const showAvatarInScene =
@@ -1237,43 +1578,52 @@ export function VirtualLabViewport({
           moveZ: avatarMoveZ,
           sprinting,
           speaking: voiceStatusRef.current === "speaking",
+          jumpHeight: avatarJumpY,
         },
       );
 
       pendingElectroH2 += electrolysisH2Delta;
       electroSyncTimer += delta;
-
-      if (
-        experimentStateRef.current.trig.sweeping &&
-        activeStationRef.current === "trig"
-      ) {
-        pendingTrigDelta += delta * 28;
-        trigSyncTimer += delta;
-      }
+      pendingDispDelta += displacementProgressDelta;
+      dispSyncTimer += delta;
 
       const shouldSyncElectro = electroSyncTimer >= 0.4 && pendingElectroH2 > 0;
-      const shouldSyncTrig = trigSyncTimer >= 0.08 && pendingTrigDelta > 0;
+      const shouldSyncDisp = dispSyncTimer >= 0.25 && pendingDispDelta > 0;
+
+      if (reflexCompletedMs !== null) {
+        labAudio.playClick(760);
+      }
+      if (neuronPeakRecordedMv !== null) {
+        labAudio.playClick(820);
+      }
 
       if (
         oscillationCompleted ||
         projectileLandedRange !== null ||
         shouldSyncElectro ||
-        shouldSyncTrig
+        shouldSyncDisp ||
+        reflexCompletedMs !== null ||
+        neuronPeakRecordedMv !== null ||
+        pcrPhaseChanged !== null
       ) {
         const addH2 = shouldSyncElectro ? pendingElectroH2 : 0;
-        const addTrig = shouldSyncTrig ? pendingTrigDelta : 0;
+        const addDisp = shouldSyncDisp ? pendingDispDelta : 0;
         if (shouldSyncElectro) {
           pendingElectroH2 = 0;
           electroSyncTimer = 0;
         }
-        if (shouldSyncTrig) {
-          pendingTrigDelta = 0;
-          trigSyncTimer = 0;
+        if (shouldSyncDisp) {
+          pendingDispDelta = 0;
+          dispSyncTimer = 0;
         }
         setExperimentState((prev) => {
           const nextH2 = Math.min(
             30,
             Number((prev.electrolysis.h2VolumeMl + addH2).toFixed(1)),
+          );
+          const nextDisp = Math.min(
+            100,
+            Math.round(prev.displacement.progressPct + addDisp),
           );
           return {
             ...prev,
@@ -1298,13 +1648,35 @@ export function VirtualLabViewport({
                     lastLandedRangeM: projectileLandedRange,
                   }
                 : prev.projectile,
-            trig:
-              addTrig > 0
+            displacement:
+              addDisp > 0
                 ? {
-                    ...prev.trig,
-                    angleDeg: Math.round((prev.trig.angleDeg + addTrig) % 360),
+                    ...prev.displacement,
+                    progressPct: nextDisp,
                   }
-                : prev.trig,
+                : prev.displacement,
+            reflex:
+              reflexCompletedMs !== null
+                ? {
+                    ...prev.reflex,
+                    lastReactionMs: reflexCompletedMs,
+                  }
+                : prev.reflex,
+            neuron:
+              neuronPeakRecordedMv !== null
+                ? {
+                    ...prev.neuron,
+                    lastPeakMv: neuronPeakRecordedMv,
+                  }
+                : prev.neuron,
+            pcr:
+              pcrPhaseChanged !== null
+                ? {
+                    ...prev.pcr,
+                    cycleCount: pcrPhaseChanged.cycleCount,
+                    phaseIndex: pcrPhaseChanged.phaseIndex,
+                  }
+                : prev.pcr,
           };
         });
       }
@@ -1368,37 +1740,47 @@ export function VirtualLabViewport({
       enterWalkMode: (
         station: StationId,
         mode: "walk" | "kid-control" | "vr-preview",
+        preservePosition = false,
       ) => {
         viewModeRef.current = mode;
         cameraTransitionRef.current.active = false;
         controls.enabled = false;
-        STATION_ORDER.forEach((id) => {
-          room.benchGroups[id].visible = true;
-        });
-        room.roomEnvelope.visible = true;
+        const targetRoom = getStationRoom(station);
+        activeRoomRef.current = targetRoom;
+        room.setActiveRoom(targetRoom, null);
         arFloorGrid.visible = false;
-        scene.background = ivoryBg;
-        scene.fog = new THREE.Fog(0xfaf8f5, 11, 24);
-        renderer.setClearColor(0xfaf8f5, 1);
-        renderer.setClearAlpha(1);
-        alignPoseToStation(station, mode);
+        applyRoomBackdrop(targetRoom);
+        alignPoseToStation(station, mode, preservePosition);
+      },
+      triggerJump: () => {
+        if (avatarJumpY <= 0.02 && avatarJumpVel === 0) {
+          avatarJumpVel = 4.6;
+          labAudio.playClick(680);
+        }
+      },
+      togglePointerLock: () => {
+        if (!isFreeLookMode(viewModeRef.current)) return;
+        if (document.pointerLockElement === canvas) {
+          document.exitPointerLock?.();
+        } else {
+          void canvas.requestPointerLock?.();
+        }
       },
       exitToOrbit: (station: StationId) => {
+        if (document.pointerLockElement === canvas) {
+          document.exitPointerLock?.();
+        }
         viewModeRef.current = "orbit";
         camera.fov = 58;
         camera.updateProjectionMatrix();
         camera.rotation.order = "XYZ";
         camera.rotation.z = 0;
         controls.enabled = true;
-        STATION_ORDER.forEach((id) => {
-          room.benchGroups[id].visible = true;
-        });
-        room.roomEnvelope.visible = true;
+        const targetRoom = getStationRoom(station);
+        activeRoomRef.current = targetRoom;
+        room.setActiveRoom(targetRoom, null);
         arFloorGrid.visible = false;
-        scene.background = ivoryBg;
-        scene.fog = new THREE.Fog(0xfaf8f5, 11, 24);
-        renderer.setClearColor(0xfaf8f5, 1);
-        renderer.setClearAlpha(1);
+        applyRoomBackdrop(targetRoom);
         const pose = BENCH_POSES[station];
         controls.target.copy(pose.cameraTarget);
         cameraTransitionRef.current.targetPos.copy(pose.cameraPosition);
@@ -1407,11 +1789,10 @@ export function VirtualLabViewport({
         controls.update();
       },
       setArIsolation: (enabled: boolean, station: StationId) => {
-        room.roomEnvelope.visible = !enabled;
+        const targetRoom = getStationRoom(station);
+        activeRoomRef.current = targetRoom;
+        room.setActiveRoom(targetRoom, enabled ? station : null);
         arFloorGrid.visible = enabled;
-        STATION_ORDER.forEach((id) => {
-          room.benchGroups[id].visible = enabled ? id === station : true;
-        });
         const pose = BENCH_POSES[station];
         arFloorGrid.position.set(pose.position.x, 0.008, pose.position.z);
       },
@@ -1422,10 +1803,7 @@ export function VirtualLabViewport({
           renderer.setClearColor(0x000000, 0);
           renderer.setClearAlpha(0);
         } else {
-          scene.background = ivoryBg;
-          scene.fog = new THREE.Fog(0xfaf8f5, 11, 24);
-          renderer.setClearColor(0xfaf8f5, 1);
-          renderer.setClearAlpha(1);
+          applyRoomBackdrop(activeRoomRef.current);
         }
       },
       startXr: async (mode: "immersive-vr" | "immersive-ar") => {
@@ -1451,15 +1829,16 @@ export function VirtualLabViewport({
         }
         const session = await xr.requestSession(mode, sessionInit);
         activeXrSession = session;
-        room.roomEnvelope.visible = !isAr;
+        const st = activeStationRef.current;
+        const targetRoom = getStationRoom(st);
+        activeRoomRef.current = targetRoom;
+        room.setActiveRoom(targetRoom, isAr ? st : null);
         if (isAr) {
-          const st = activeStationRef.current;
-          STATION_ORDER.forEach((id) => {
-            room.benchGroups[id].visible = id === st;
-          });
           scene.background = null;
           scene.fog = null;
           renderer.setClearColor(0x000000, 0);
+        } else {
+          applyRoomBackdrop(targetRoom);
         }
 
         xrRig.position.set(0, 0, 3.6);
@@ -1474,13 +1853,10 @@ export function VirtualLabViewport({
           renderer.setAnimationLoop(null);
           xrRig.remove(camera);
           scene.add(camera);
-          room.roomEnvelope.visible = true;
-          STATION_ORDER.forEach((id) => {
-            room.benchGroups[id].visible = true;
-          });
-          scene.background = ivoryBg;
-          scene.fog = new THREE.Fog(0xfaf8f5, 11, 24);
-          renderer.setClearColor(0xfaf8f5, 1);
+          const endRoom = getStationRoom(activeStationRef.current);
+          activeRoomRef.current = endRoom;
+          room.setActiveRoom(endRoom, null);
+          applyRoomBackdrop(endRoom);
           setViewMode("orbit");
           focusStation(activeStationRef.current);
           frameId = requestAnimationFrame(tick);
@@ -1510,6 +1886,10 @@ export function VirtualLabViewport({
       }
       stopCameraFeed();
 
+      if (document.pointerLockElement === canvas) {
+        document.exitPointerLock?.();
+      }
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
       window.removeEventListener("resize", handleResize);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("wheel", onCanvasWheel);
@@ -1521,6 +1901,7 @@ export function VirtualLabViewport({
 
       controls.dispose();
       stations.dispose();
+      complexStations.dispose();
       studentAvatar3d.dispose();
       studentAvatar3dRef.current = null;
       arFloorGrid.dispose();
@@ -1541,17 +1922,32 @@ export function VirtualLabViewport({
   }, [stopCameraFeed]);
 
   const switchStation = (station: StationId) => {
-    labAudio.playClick(560);
+    const targetRoom = getStationRoom(station);
+    const roomChanged = targetRoom !== activeRoom;
+    labAudio.playClick(roomChanged ? 640 : 560);
     setActiveStation(station);
+    if (roomChanged) {
+      setActiveRoom(targetRoom);
+      setStatusNotice(
+        `Entered ${LAB_ROOMS[targetRoom].name} (${LAB_ROOMS[targetRoom].stationRange})`,
+      );
+    }
     setShowHint(false);
     setStationMenuOpen(false);
     xrControllerRef.current?.focusStation(station);
   };
 
+  const switchRoom = (targetRoom: LabRoomId) => {
+    if (targetRoom === activeRoom) return;
+    switchStation(LAB_ROOMS[targetRoom].defaultStation);
+  };
+
   const stepStation = (delta: -1 | 1) => {
-    const idx = STATION_ORDER.indexOf(activeStation);
-    const nextIdx = (idx + delta + STATION_ORDER.length) % STATION_ORDER.length;
-    switchStation(STATION_ORDER[nextIdx]);
+    const roomList = ROOM_STATIONS[activeRoom];
+    const idx = roomList.indexOf(activeStation);
+    const safeIdx = idx === -1 ? 0 : idx;
+    const nextIdx = (safeIdx + delta + roomList.length) % roomList.length;
+    switchStation(roomList[nextIdx]);
   };
 
   const returnToOrbitMode = async () => {
@@ -1572,45 +1968,51 @@ export function VirtualLabViewport({
     setStatusNotice("Orbit View: Drag to rotate · Scroll or +/- to zoom.");
   };
 
-  const toggleWalkMode = () => {
-    labAudio.playClick(500);
+  const enterFirstPersonMode = () => {
+    labAudio.playClick(520);
     stopCameraFeed();
     setArBackdropActive(false);
+    vrStereoRef.current = false;
     setVrStereo(false);
     xrControllerRef.current?.setArIsolation(false, activeStation);
     xrControllerRef.current?.setTransparentBackground(false);
-
-    if (viewMode === "walk") {
-      setViewMode("orbit");
-      xrControllerRef.current?.exitToOrbit(activeStation);
-      setStatusNotice("Switched to Bench Orbit view.");
-    } else {
-      setViewMode("walk");
-      xrControllerRef.current?.enterWalkMode(activeStation, "walk");
-      setStatusNotice(
-        "Walk Mode: WASD / Arrows to walk · Drag anywhere to look around · Scroll or +/- to zoom.",
-      );
-    }
+    const keepPos = viewModeRef.current === "kid-control" || viewModeRef.current === "walk";
+    viewModeRef.current = "walk";
+    setViewMode("walk");
+    xrControllerRef.current?.enterWalkMode(activeStation, "walk", keepPos);
+    setStatusNotice(
+      "1st-Person View: WASD / Arrows to walk · Shift sprint · Space jump · Drag or press M for Mouse Look · V to switch view.",
+    );
   };
 
-  const toggleKidControlMode = () => {
+  const enterThirdPersonMode = () => {
     labAudio.playClick(540);
     stopCameraFeed();
     setArBackdropActive(false);
+    vrStereoRef.current = false;
     setVrStereo(false);
     xrControllerRef.current?.setArIsolation(false, activeStation);
     xrControllerRef.current?.setTransparentBackground(false);
+    const keepPos = viewModeRef.current === "walk" || viewModeRef.current === "kid-control";
+    viewModeRef.current = "kid-control";
+    setViewMode("kid-control");
+    xrControllerRef.current?.enterWalkMode(
+      activeStation,
+      "kid-control",
+      keepPos,
+    );
+    setStatusNotice(
+      "3rd-Person Avatar View: WASD / Arrows to run · Shift sprint · Space jump · Drag or M for Mouse Look · Click floor to walk · V to switch view.",
+    );
+  };
 
-    if (viewMode === "kid-control") {
-      setViewMode("orbit");
-      xrControllerRef.current?.exitToOrbit(activeStation);
-      setStatusNotice("Switched to Bench Orbit view.");
+  cycleCameraViewRef.current = () => {
+    if (viewModeRef.current === "kid-control") {
+      enterFirstPersonMode();
+    } else if (viewModeRef.current === "walk") {
+      void returnToOrbitMode();
     } else {
-      setViewMode("kid-control");
-      xrControllerRef.current?.enterWalkMode(activeStation, "kid-control");
-      setStatusNotice(
-        "Kid Avatar Control: WASD / Arrows / D-Pad to move · Shift to sprint · Drag to orbit · Scroll or +/- to zoom · Click floor to walk.",
-      );
+      enterThirdPersonMode();
     }
   };
 
@@ -1778,9 +2180,72 @@ export function VirtualLabViewport({
         ? 1.0
         : 1.52;
 
-  const trigRad = (experimentState.trig.angleDeg * Math.PI) / 180;
-  const trigCos = Math.cos(trigRad);
-  const trigSin = Math.sin(trigRad);
+  const lensResult = calculateLensImage(
+    experimentState.lens.objectDistanceCm,
+    experimentState.lens.focalLengthCm,
+  );
+  const solenoidFieldMt = calculateSolenoidFieldMt(
+    experimentState.electromagnet.powerOn,
+    experimentState.electromagnet.currentA,
+    experimentState.electromagnet.coilTurns,
+    experimentState.electromagnet.ironCoreInserted,
+  );
+  const resistorNet = calculateResistorsNetwork(
+    experimentState.resistors.mode,
+    experimentState.resistors.r1Ohm,
+    experimentState.resistors.r2Ohm,
+    experimentState.resistors.voltageV,
+  );
+  const alkaneInfo = calculateCarbonAlkane(experimentState.carbon.carbons);
+  const reflexTimeMs = calculateReflexTimeMs(
+    experimentState.reflex.conductionSpeedMs,
+  );
+  const mendelResult = calculateMendelOffspring(
+    experimentState.mendel.parent1,
+    experimentState.mendel.parent2,
+  );
+  const doubleSlitMetrics = calculateDoubleSlitMetrics(
+    experimentState.doubleslit.wavelengthNm,
+    experimentState.doubleslit.slitSeparationMm,
+    experimentState.doubleslit.screenDistanceM,
+  );
+  const photoMetrics = calculatePhotoelectricMetrics(
+    experimentState.photoelectric.metal,
+    experimentState.photoelectric.wavelengthNm,
+    experimentState.photoelectric.intensityPct,
+    experimentState.photoelectric.collectorVoltageV,
+  );
+  const haberMetrics = calculateHaberMetrics(
+    experimentState.haber.pressureAtm,
+    experimentState.haber.temperatureC,
+    experimentState.haber.catalystOn,
+  );
+  const galvanicMetrics = calculateGalvanicMetrics(
+    experimentState.galvanic.saltBridgeInserted,
+    experimentState.galvanic.cuConcM,
+    experimentState.galvanic.znConcM,
+    experimentState.galvanic.tempK,
+  );
+  const neuronMetrics = calculateNeuronMetrics(
+    experimentState.neuron.stimulusUa,
+    experimentState.neuron.myelinated,
+    experimentState.neuron.sodiumMm,
+  );
+  const pcrMetrics = calculatePcrMetrics(
+    experimentState.pcr.annealingTempC,
+    experimentState.pcr.cycleCount,
+    experimentState.pcr.taqActive,
+  );
+
+  const resetActiveBench = () => {
+    labAudio.playClick(500);
+    studentAvatar3dRef.current?.triggerAction("adjust", 1.1);
+    setExperimentState((prev) => ({
+      ...prev,
+      [activeStation]: INITIAL_EXPERIMENT_STATE[activeStation],
+    }));
+    setStatusNotice(`Reset ${STATION_SHORT_LABEL[activeStation]} bench to default.`);
+  };
 
   return (
     <div
@@ -1854,31 +2319,31 @@ export function VirtualLabViewport({
         </div>
       ) : null}
 
-      {/* Top HUD Bar: Ultra-Clean Frosted Floating Strips */}
-      <div className="pointer-events-none fixed inset-x-4 top-3.5 z-20 flex items-start justify-between gap-3">
-        {/* Top-Left: Compact Single-Row Profile & On-Demand Quest Popover */}
-        <div className="pointer-events-auto relative flex flex-col items-start">
-          <div className="flex h-11 items-center gap-2 rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/85 px-2 shadow-[0_4px_20px_rgba(35,27,22,0.06)] backdrop-blur-md">
+      {/* Top HUD Bar: Collision-Proof 3-Zone Frosted Navigation */}
+      <div className="pointer-events-none fixed inset-x-3 sm:inset-x-4 top-3 z-20 flex flex-wrap items-start justify-between gap-2">
+        {/* Zone 1 (Left): Compact Profile, Quest & Subject Rooms */}
+        <div className="order-1 pointer-events-auto relative flex flex-col items-start max-w-full">
+          <div className="flex h-11 items-center gap-1.5 rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/88 px-1.5 shadow-[0_4px_20px_rgba(35,27,22,0.06)] backdrop-blur-md">
             <button
               type="button"
               onClick={() => {
                 setQuestPopoverOpen(false);
                 setCustomizerOpen(true);
               }}
-              title="Customize student avatar"
-              className="flex items-center gap-2 rounded-xl px-1.5 py-1 hover:bg-[#231B16]/[0.05] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title={`Customize student avatar (${avatar.name || "Student"})`}
+              className="flex items-center gap-1.5 rounded-xl px-1.5 py-1 hover:bg-[#231B16]/[0.05] transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <div className="scale-90 origin-left -mr-1">
+              <div className="scale-90 origin-center">
                 <StudentAvatarSvg avatar={avatar} size="sm" />
               </div>
-              <span className="font-display text-sm font-semibold text-[#231B16] max-w-[110px] truncate">
+              <span className="hidden 2xl:inline font-display text-sm font-semibold text-[#231B16] max-w-[96px] truncate">
                 {avatar.name || "Student"}
               </span>
             </button>
 
-            <span className="h-4 w-px bg-[#231B16]/12 shrink-0" aria-hidden="true" />
+            <span className="hidden 2xl:block h-4 w-px bg-[#231B16]/12 shrink-0" aria-hidden="true" />
 
-            <div className="hidden sm:flex items-center gap-1.5 px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap shrink-0">
+            <div className="hidden 2xl:flex items-center gap-1.5 px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap shrink-0">
               <span className="font-medium text-[#42335C]">{progress.xp} XP</span>
               <span aria-hidden="true">·</span>
               <span>
@@ -1886,7 +2351,7 @@ export function VirtualLabViewport({
               </span>
             </div>
 
-            <span className="hidden sm:block h-4 w-px bg-[#231B16]/12 shrink-0" aria-hidden="true" />
+            <span className="h-4 w-px bg-[#231B16]/12 shrink-0" aria-hidden="true" />
 
             <button
               type="button"
@@ -1895,8 +2360,9 @@ export function VirtualLabViewport({
                 setQuestPopoverOpen((prev) => !prev);
               }}
               aria-expanded={questPopoverOpen}
+              title={`Quest progress: ${completedCount}/${STATION_ORDER.length} · ${progress.xp} XP`}
               className={[
-                "inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors",
+                "inline-flex items-center gap-1 rounded-xl px-2 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors",
                 questPopoverOpen
                   ? "bg-[#6F4E37] text-white"
                   : "text-[#231B16] hover:bg-[#231B16]/[0.05]",
@@ -1928,6 +2394,51 @@ export function VirtualLabViewport({
                 aria-hidden="true"
               />
             </button>
+
+            <span className="h-4 w-px bg-[#231B16]/12 shrink-0" aria-hidden="true" />
+
+            {/* Compact 3-Subject Room Switcher (Physics | Chemistry | Biology) */}
+            <div
+              role="group"
+              aria-label="Subject laboratory room"
+              className="flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5 shrink-0"
+            >
+              {ROOM_ORDER.map((roomId) => {
+                const roomMeta = LAB_ROOMS[roomId];
+                const isSelected = activeRoom === roomId;
+                const activeClass =
+                  roomId === "physics"
+                    ? "bg-[#2F4368] text-white shadow-xs"
+                    : roomId === "chemistry"
+                      ? "bg-[#6F4E37] text-white shadow-xs"
+                      : "bg-[#2D6A4F] text-white shadow-xs";
+                return (
+                  <button
+                    key={roomId}
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      switchRoom(roomId);
+                    }}
+                    title={`${roomMeta.name} (${roomMeta.stationRange}) · ${roomMeta.wingBadge}`}
+                    className={[
+                      "inline-flex items-center gap-1 rounded-[10px] px-2 h-7 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
+                      isSelected
+                        ? activeClass
+                        : "text-[#5C5149] hover:text-[#231B16] hover:bg-white/60",
+                    ].join(" ")}
+                  >
+                    {isSelected ? (
+                      <DoorOpen
+                        className="h-3 w-3 hidden 2xl:inline"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <span>{roomMeta.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {questPopoverOpen ? (
@@ -1935,7 +2446,7 @@ export function VirtualLabViewport({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-[11px] font-medium text-[#786D65]">
-                    {activeQuest.subject} · {progress.rankTitle}
+                    {activeQuest.subject} · {progress.rankTitle} · {progress.xp} XP ({completedCount}/{STATION_ORDER.length})
                   </p>
                   <p className="text-sm font-semibold text-[#231B16] leading-snug">
                     {activeQuest.stationNumber}. {activeQuest.title}
@@ -1969,108 +2480,110 @@ export function VirtualLabViewport({
           ) : null}
         </div>
 
-        {/* Top-Right: Streamlined Mode Switcher + Voice CTA + Minimal Utilities */}
-        <div className="flex flex-col items-end gap-2.5 shrink-0 pointer-events-none max-w-full">
-          <div className="pointer-events-auto flex h-11 items-center gap-1.5 rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/85 px-1.5 shadow-[0_4px_20px_rgba(35,27,22,0.06)] backdrop-blur-md">
-            {/* Unified Spatial View Mode Segmented Switcher */}
-            <div
-              role="group"
-              aria-label="View mode"
-              className="flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5"
+        {/* Zone 2 (Center): Dedicated Camera Perspective Bar (Never collides with Room or Action bars) */}
+        <div className="order-3 lg:order-2 w-full lg:w-auto flex justify-center pointer-events-none">
+          <div
+            role="group"
+            aria-label="Camera perspective"
+            className="pointer-events-auto flex h-11 max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/88 p-1.5 shadow-[0_4px_20px_rgba(35,27,22,0.06)] backdrop-blur-md"
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                enterThirdPersonMode();
+              }}
+              title="3rd-Person Game Camera behind your avatar (Cycle with V)"
+              className={[
+                "inline-flex items-center gap-1.5 rounded-xl px-2.5 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
+                viewMode === "kid-control"
+                  ? "bg-[#6F4E37] text-white shadow-xs"
+                  : "text-[#5C5149] hover:text-[#231B16] hover:bg-[#231B16]/[0.05]",
+              ].join(" ")}
             >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  void returnToOrbitMode();
-                }}
-                title="Orbit around experiment bench"
-                className={[
-                  "inline-flex items-center gap-1 rounded-[10px] px-2.5 h-7 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
-                  viewMode === "orbit"
-                    ? "bg-white text-[#231B16] shadow-xs"
-                    : "text-[#5C5149] hover:text-[#231B16]",
-                ].join(" ")}
-              >
-                <Compass className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden lg:inline">Orbit</span>
-              </button>
+              <Footprints className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>3rd View</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  toggleWalkMode();
-                }}
-                title="First-person walk mode"
-                className={[
-                  "inline-flex items-center gap-1 rounded-[10px] px-2.5 h-7 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
-                  viewMode === "walk"
-                    ? "bg-[#6F4E37] text-white shadow-xs"
-                    : "text-[#5C5149] hover:text-[#231B16]",
-                ].join(" ")}
-              >
-                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Walk</span>
-              </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                enterFirstPersonMode();
+              }}
+              title="1st-Person Avatar Eye View (Cycle with V)"
+              className={[
+                "inline-flex items-center gap-1.5 rounded-xl px-2.5 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
+                viewMode === "walk"
+                  ? "bg-[#6F4E37] text-white shadow-xs"
+                  : "text-[#5C5149] hover:text-[#231B16] hover:bg-[#231B16]/[0.05]",
+              ].join(" ")}
+            >
+              <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>1st View</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  toggleKidControlMode();
-                }}
-                title="Control 3D Kid Avatar"
-                className={[
-                  "inline-flex items-center gap-1 rounded-[10px] px-2.5 h-7 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
-                  viewMode === "kid-control"
-                    ? "bg-[#6F4E37] text-white shadow-xs"
-                    : "text-[#5C5149] hover:text-[#231B16]",
-                ].join(" ")}
-              >
-                <Footprints className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Kid</span>
-              </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                void returnToOrbitMode();
+              }}
+              title="Bench Orbit inspection view (Cycle with V)"
+              className={[
+                "inline-flex items-center gap-1.5 rounded-xl px-2.5 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
+                viewMode === "orbit"
+                  ? "bg-white text-[#231B16] border border-[#231B16]/10 shadow-xs"
+                  : "text-[#5C5149] hover:text-[#231B16] hover:bg-[#231B16]/[0.05]",
+              ].join(" ")}
+            >
+              <Compass className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>Orbit</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  void handleEnterVr();
-                }}
-                title="VR stereoscopic immersion"
-                className={[
-                  "inline-flex items-center gap-1 rounded-[10px] px-2.5 h-7 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
-                  viewMode === "vr-preview" || viewMode === "vr-xr"
-                    ? "bg-[#42335C] text-white shadow-xs"
-                    : "text-[#42335C] hover:bg-white/60",
-                ].join(" ")}
-              >
-                <Glasses className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>VR</span>
-              </button>
+            <span className="h-4 w-px bg-[#231B16]/12 mx-0.5 shrink-0" aria-hidden="true" />
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  void handleToggleAr();
-                }}
-                title="AR tabletop & camera mode"
-                className={[
-                  "inline-flex items-center gap-1 rounded-[10px] px-2.5 h-7 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
-                  viewMode === "ar-camera" || viewMode === "ar-xr"
-                    ? "bg-[#6F4E37] text-white shadow-xs"
-                    : "text-[#5C5149] hover:text-[#231B16]",
-                ].join(" ")}
-              >
-                <Camera className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>AR</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                void handleEnterVr();
+              }}
+              title="VR stereoscopic immersion"
+              className={[
+                "inline-flex items-center gap-1 rounded-xl px-2 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
+                viewMode === "vr-preview" || viewMode === "vr-xr"
+                  ? "bg-[#42335C] text-white shadow-xs"
+                  : "text-[#42335C] hover:bg-[#42335C]/[0.08]",
+              ].join(" ")}
+            >
+              <Glasses className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>VR</span>
+            </button>
 
-            <span className="h-4 w-px bg-[#231B16]/12 shrink-0" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                void handleToggleAr();
+              }}
+              title="AR tabletop & camera mode"
+              className={[
+                "inline-flex items-center gap-1 rounded-xl px-2 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-all",
+                viewMode === "ar-camera" || viewMode === "ar-xr"
+                  ? "bg-[#6F4E37] text-white shadow-xs"
+                  : "text-[#5C5149] hover:text-[#231B16] hover:bg-[#231B16]/[0.05]",
+              ].join(" ")}
+            >
+              <Camera className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>AR</span>
+            </button>
+          </div>
+        </div>
 
+        {/* Zone 3 (Right): Language, Voice Explain CTA & Minimal Utilities */}
+        <div className="order-2 lg:order-3 flex flex-col items-end gap-2.5 shrink-0 pointer-events-none max-w-full">
+          <div className="pointer-events-auto flex h-11 items-center gap-1.5 rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/88 px-1.5 shadow-[0_4px_20px_rgba(35,27,22,0.06)] backdrop-blur-md">
             {/* Language + Voice Explain CTA */}
             <select
               aria-label="Explanation language"
@@ -2081,7 +2594,7 @@ export function VirtualLabViewport({
                 updateAvatar({ language: e.target.value as TutorLanguage });
                 e.currentTarget.blur();
               }}
-              className="h-8 rounded-xl bg-transparent px-2 text-xs font-medium text-[#231B16] hover:bg-[#231B16]/[0.05] cursor-pointer transition-colors"
+              className="h-8 rounded-xl bg-transparent px-1.5 text-xs font-medium text-[#231B16] hover:bg-[#231B16]/[0.05] cursor-pointer transition-colors"
             >
               {LAB_LANGUAGE_OPTIONS.map((lang) => (
                 <option key={lang.id} value={lang.id}>
@@ -2099,7 +2612,7 @@ export function VirtualLabViewport({
               }}
               title="Speak explanation (Shortcut: E)"
               className={[
-                "inline-flex items-center gap-1.5 rounded-xl px-3 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-xs",
+                "inline-flex items-center gap-1.5 rounded-xl px-2.5 h-8 text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-xs",
                 voice.activeKey === `vp:${activeStation}:${avatar.language}` &&
                 voice.status !== "idle"
                   ? "bg-[#42335C] text-white"
@@ -2108,12 +2621,12 @@ export function VirtualLabViewport({
             >
               {voice.activeKey === `vp:${activeStation}:${avatar.language}` &&
               voice.status === "loading" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" aria-hidden="true" />
               ) : voice.activeKey === `vp:${activeStation}:${avatar.language}` &&
                 voice.status === "speaking" ? (
-                <Square className="h-3.5 w-3.5" aria-hidden="true" />
+                <Square className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               ) : (
-                <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <Volume2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               )}
               <span>
                 {voice.activeKey === `vp:${activeStation}:${avatar.language}` &&
@@ -2259,7 +2772,7 @@ export function VirtualLabViewport({
 
       {/* Transient Quest / Voice / Status Toast (Auto-fades cleanly) */}
       {questBanner || statusNotice || voice.error || voice.status !== "idle" ? (
-        <div className="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 max-w-[90vw]">
+        <div className="pointer-events-none fixed top-[6.75rem] lg:top-16 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 max-w-[90vw]">
           {voice.status !== "idle" ? (
             <div className="pointer-events-auto flex items-center gap-2.5 rounded-xl border border-[#42335C]/20 bg-[#F3EFF9]/95 backdrop-blur-md px-3.5 py-1.5 text-xs font-medium text-[#42335C] shadow-sm">
               {voice.status === "loading" ? (
@@ -2342,7 +2855,68 @@ export function VirtualLabViewport({
         )
       ) : null}
 
-      {/* Walk / Kid Control / VR Touch D-Pad & Mode Extras */}
+      {/* Bottom-Left Compact Game Controls & Perspective Quick Bar */}
+      {viewMode === "walk" || viewMode === "kid-control" ? (
+        <div
+          className={[
+            "pointer-events-auto fixed left-4 z-20 hidden sm:flex flex-col gap-1.5 rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/86 backdrop-blur-md px-3 py-2 shadow-[0_8px_24px_rgba(35,27,22,0.08)] transition-all duration-200",
+            dockCollapsed ? "bottom-16" : "bottom-36",
+          ].join(" ")}
+        >
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                cycleCameraViewRef.current();
+              }}
+              title="Cycle 3rd Person / 1st Person / Orbit (Shortcut: V)"
+              className="rounded-lg bg-[#6F4E37] px-2 py-1 text-[11px] font-medium text-white hover:bg-[#5A3E2B] cursor-pointer whitespace-nowrap transition-colors"
+            >
+              {viewMode === "kid-control" ? "3rd Person" : "1st Person"} (V)
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                xrControllerRef.current?.togglePointerLock();
+              }}
+              title="Toggle FPS/TPS Mouse Look (Shortcut: M, Esc to unlock)"
+              className={[
+                "rounded-lg px-2 py-1 text-[11px] font-medium cursor-pointer whitespace-nowrap transition-colors",
+                mouseLookActive
+                  ? "bg-[#2F4368] text-white"
+                  : "bg-white/85 text-[#231B16] hover:bg-white border border-[#231B16]/10",
+              ].join(" ")}
+            >
+              {mouseLookActive ? "Mouse Locked (Esc)" : "Mouse Look (M)"}
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                setSprintToggle((s) => !s);
+              }}
+              title="Toggle Sprint (or hold Shift)"
+              className={[
+                "rounded-lg px-2 py-1 text-[11px] font-medium cursor-pointer whitespace-nowrap transition-colors",
+                sprintToggle
+                  ? "bg-[#2D6A4F] text-white"
+                  : "bg-white/85 text-[#231B16] hover:bg-white border border-[#231B16]/10",
+              ].join(" ")}
+            >
+              {sprintToggle ? "Sprint: ON" : "Sprint"}
+            </button>
+          </div>
+          <p className="text-[11px] font-mono text-[#5C5149] whitespace-nowrap">
+            WASD Move · Space Jump · Shift Sprint · Drag Look
+          </p>
+        </div>
+      ) : null}
+
+      {/* Walk / 3rd-Person / 1st-Person / VR On-Screen Game Pad */}
       {viewMode === "walk" || viewMode === "kid-control" || viewMode === "vr-preview" ? (
         <div
           className={[
@@ -2432,6 +3006,18 @@ export function VirtualLabViewport({
               <ArrowRight className="h-4 w-4 text-[#231B16]" aria-hidden="true" />
             </button>
           </div>
+          {viewMode !== "vr-preview" ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                xrControllerRef.current?.triggerJump();
+              }}
+              className="rounded-xl bg-[#6F4E37] px-2 py-1.5 text-[11px] font-medium text-white hover:bg-[#5A3E2B] active:scale-95 transition-all cursor-pointer"
+            >
+              Jump (Space)
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -2456,12 +3042,12 @@ export function VirtualLabViewport({
         </div>
       ) : (
         <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 z-20 w-[min(860px,94vw)]">
-          {/* Floating 12-Station Grid Popover (Zero Horizontal Scrollbar) */}
+          {/* Floating 3-Subject Room 18-Station Directory Popover */}
           {stationMenuOpen ? (
-            <div className="pointer-events-auto mb-2 rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/95 p-3 shadow-[0_16px_40px_rgba(35,27,22,0.14)] backdrop-blur-md">
-              <div className="flex items-center justify-between pb-2 mb-2 border-b border-[#231B16]/[0.08] px-1">
+            <div className="pointer-events-auto mb-2 max-h-[62vh] overflow-y-auto rounded-2xl border border-[#231B16]/10 bg-[#FAF8F5]/95 p-3 shadow-[0_16px_40px_rgba(35,27,22,0.14)] backdrop-blur-md space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[#231B16]/[0.08] px-1">
                 <span className="text-xs font-semibold text-[#231B16]">
-                  All 12 Laboratory Stations
+                  All 18 Science Stations · 3 Subject Rooms
                 </span>
                 <button
                   type="button"
@@ -2472,47 +3058,77 @@ export function VirtualLabViewport({
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
-                {STATION_ORDER.map((id) => {
-                  const quest = LAB_QUESTS[id];
-                  const isActive = id === activeStation;
-                  const isDone = completedQuests[id];
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => switchStation(id)}
-                      className={[
-                        "flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer",
-                        isActive
-                          ? "bg-[#6F4E37] text-white font-medium shadow-xs"
-                          : "bg-white/75 text-[#231B16] hover:bg-white",
-                      ].join(" ")}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={[
-                            "font-mono tabular-nums text-[11px] shrink-0",
-                            isActive ? "text-white/80" : "text-[#786D65]",
-                          ].join(" ")}
-                        >
-                          {quest.stationNumber}
-                        </span>
-                        <span className="truncate">{STATION_SHORT_LABEL[id]}</span>
-                      </div>
-                      {isDone ? (
-                        <CheckCircle2
-                          className={[
-                            "h-3.5 w-3.5 shrink-0",
-                            isActive ? "text-white" : "text-[#2D6A4F]",
-                          ].join(" ")}
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
+
+              {ROOM_ORDER.map((roomId) => {
+                const roomMeta = LAB_ROOMS[roomId];
+                const roomTitleTone =
+                  roomId === "physics"
+                    ? "text-[#2F4368]"
+                    : roomId === "chemistry"
+                      ? "text-[#6F4E37]"
+                      : "text-[#2D6A4F]";
+                const roomActiveBtn =
+                  roomId === "physics"
+                    ? "bg-[#2F4368] text-white font-medium shadow-xs"
+                    : roomId === "chemistry"
+                      ? "bg-[#6F4E37] text-white font-medium shadow-xs"
+                      : "bg-[#2D6A4F] text-white font-medium shadow-xs";
+                return (
+                  <div key={roomId} className="space-y-1.5">
+                    <div className="flex items-center justify-between px-1">
+                      <span className={["text-[11px] font-semibold", roomTitleTone].join(" ")}>
+                        {roomMeta.name} ({roomMeta.stationRange})
+                      </span>
+                      <span className="text-[11px] text-[#786D65]">
+                        {roomMeta.wingBadge}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5">
+                      {ROOM_STATIONS[roomId].map((id) => {
+                        const quest = LAB_QUESTS[id];
+                        const isActive = id === activeStation;
+                        const isDone = completedQuests[id];
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => switchStation(id)}
+                            className={[
+                              "flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer",
+                              isActive
+                                ? roomActiveBtn
+                                : "bg-white/75 text-[#231B16] hover:bg-white",
+                            ].join(" ")}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={[
+                                  "font-mono tabular-nums text-[11px] shrink-0",
+                                  isActive ? "text-white/80" : "text-[#786D65]",
+                                ].join(" ")}
+                              >
+                                {quest.stationNumber}
+                              </span>
+                              <span className="truncate">
+                                {STATION_SHORT_LABEL[id]}
+                              </span>
+                            </div>
+                            {isDone ? (
+                              <CheckCircle2
+                                className={[
+                                  "h-3.5 w-3.5 shrink-0",
+                                  isActive ? "text-white" : "text-[#2D6A4F]",
+                                ].join(" ")}
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
 
@@ -2578,8 +3194,11 @@ export function VirtualLabViewport({
                 </button>
               </div>
 
-              {/* Quiet Single-Line Objective & Hint Right Where You Experiment */}
+              {/* Quiet Single-Line Formula, Objective & Hint Right Where You Experiment */}
               <div className="hidden md:flex items-center gap-2 min-w-0 flex-1 text-xs text-[#5C5149]">
+                <span className="font-mono text-[11px] text-[#2F4368] bg-[#231B16]/[0.04] rounded-md px-1.5 py-0.5 whitespace-nowrap shrink-0">
+                  {activeQuest.formula}
+                </span>
                 <span className="truncate">
                   {showHint ? activeQuest.hint : activeQuest.objective}
                 </span>
@@ -2592,18 +3211,38 @@ export function VirtualLabViewport({
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setStationMenuOpen(false);
-                  setDockCollapsed(true);
-                }}
-                aria-label="Minimize controls"
-                title="Hide controls (Shortcut: H)"
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-[#5C5149] hover:bg-[#231B16]/[0.06] hover:text-[#231B16] transition-colors cursor-pointer shrink-0"
-              >
-                <ChevronDown className="h-4 w-4" aria-hidden="true" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => xrControllerRef.current?.triggerActiveAction()}
+                  title="Use avatar hands on this bench (Shortcut: F)"
+                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-[#6F4E37]/10 px-2 text-[11px] font-medium text-[#6F4E37] hover:bg-[#6F4E37]/20 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <Hand className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="hidden sm:inline">Interact</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={resetActiveBench}
+                  aria-label="Reset current bench"
+                  title="Reset bench parameters"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#5C5149] hover:bg-[#231B16]/[0.06] hover:text-[#231B16] transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStationMenuOpen(false);
+                    setDockCollapsed(true);
+                  }}
+                  aria-label="Minimize controls"
+                  title="Hide controls (Shortcut: H)"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-[#5C5149] hover:bg-[#231B16]/[0.06] hover:text-[#231B16] transition-colors cursor-pointer"
+                >
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <div className="px-4 py-3">
@@ -2634,7 +3273,8 @@ export function VirtualLabViewport({
                         pendulum: {
                           ...prev.pendulum,
                           lengthM,
-                          measuredPeriodS: 2 * Math.PI * Math.sqrt(lengthM / 9.81),
+                          measuredPeriodS:
+                            2 * Math.PI * Math.sqrt(lengthM / prev.pendulum.gravityMs2),
                         },
                       }));
                     }}
@@ -2669,9 +3309,44 @@ export function VirtualLabViewport({
                 </label>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="inline-flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5 text-[11px]">
+                  {(
+                    [
+                      { label: "Earth", g: 9.81 },
+                      { label: "Moon", g: 1.62 },
+                      { label: "Mars", g: 3.71 },
+                    ] as const
+                  ).map((planet) => (
+                    <button
+                      key={planet.label}
+                      type="button"
+                      onClick={() => {
+                        labAudio.playClick(580);
+                        setExperimentState((prev) => ({
+                          ...prev,
+                          pendulum: {
+                            ...prev.pendulum,
+                            gravityMs2: planet.g,
+                            measuredPeriodS:
+                              2 * Math.PI * Math.sqrt(prev.pendulum.lengthM / planet.g),
+                          },
+                        }));
+                      }}
+                      className={[
+                        "rounded-[9px] px-2 py-1 font-medium cursor-pointer transition-colors",
+                        Math.abs(experimentState.pendulum.gravityMs2 - planet.g) < 0.05
+                          ? "bg-[#42335C] text-white shadow-xs"
+                          : "text-[#5C5149] hover:text-[#231B16]",
+                      ].join(" ")}
+                    >
+                      {planet.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
                   T = {experimentState.pendulum.measuredPeriodS.toFixed(2)} s ·{" "}
+                  g={experimentState.pendulum.gravityMs2.toFixed(2)} ·{" "}
                   {experimentState.pendulum.elapsedOscillations} swings
                 </div>
                 <button
@@ -3325,6 +4000,7 @@ export function VirtualLabViewport({
                           rangeM: calculateProjectileRange(
                             angleDeg,
                             prev.projectile.speedMs,
+                            prev.projectile.gravityMs2,
                           ),
                         },
                       }));
@@ -3358,6 +4034,7 @@ export function VirtualLabViewport({
                           rangeM: calculateProjectileRange(
                             prev.projectile.angleDeg,
                             speedMs,
+                            prev.projectile.gravityMs2,
                           ),
                         },
                       }));
@@ -3368,6 +4045,43 @@ export function VirtualLabViewport({
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="inline-flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5 text-[11px]">
+                  {(
+                    [
+                      { label: "Earth", g: 9.81 },
+                      { label: "Moon", g: 1.62 },
+                      { label: "Mars", g: 3.71 },
+                    ] as const
+                  ).map((planet) => (
+                    <button
+                      key={planet.label}
+                      type="button"
+                      onClick={() => {
+                        labAudio.playClick(580);
+                        setExperimentState((prev) => ({
+                          ...prev,
+                          projectile: {
+                            ...prev.projectile,
+                            gravityMs2: planet.g,
+                            rangeM: calculateProjectileRange(
+                              prev.projectile.angleDeg,
+                              prev.projectile.speedMs,
+                              planet.g,
+                            ),
+                          },
+                        }));
+                      }}
+                      className={[
+                        "rounded-[9px] px-2 py-1 font-medium cursor-pointer transition-colors",
+                        Math.abs(experimentState.projectile.gravityMs2 - planet.g) < 0.05
+                          ? "bg-[#42335C] text-white shadow-xs"
+                          : "text-[#5C5149] hover:text-[#231B16]",
+                      ].join(" ")}
+                    >
+                      {planet.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
                   R = {experimentState.projectile.rangeM.toFixed(2)} m
                   {experimentState.projectile.lastLandedRangeM !== null
@@ -3613,38 +4327,69 @@ export function VirtualLabViewport({
             </div>
           ) : null}
 
-          {/* 12: Trigonometric Unit Circle Controls */}
-          {activeStation === "trig" ? (
+          {/* Convex Lens & Image Formation Controls */}
+          {activeStation === "lens" ? (
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <label className="space-y-1 text-xs flex-1">
-                <div className="flex justify-between">
-                  <span className="font-medium text-[#231B16]">
-                    Phasor Angle (θ)
-                  </span>
-                  <span className="font-mono tabular-nums text-[#6F4E37]">
-                    {experimentState.trig.angleDeg}° ({(trigRad / Math.PI).toFixed(2)}π rad)
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={360}
-                  step={1}
-                  value={experimentState.trig.angleDeg}
-                  onChange={(e) => {
-                    const angleDeg = Number(e.target.value);
-                    setExperimentState((prev) => ({
-                      ...prev,
-                      trig: { ...prev.trig, sweeping: false, angleDeg },
-                    }));
-                  }}
-                  className="w-full lab-slider"
-                />
-              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Object Distance (|u|)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.lens.objectDistanceCm} cm
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={8}
+                    max={50}
+                    step={1}
+                    value={experimentState.lens.objectDistanceCm}
+                    onChange={(e) => {
+                      const objectDistanceCm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        lens: { ...prev.lens, objectDistanceCm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Focal Length (f)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.lens.focalLengthCm} cm (2F ={" "}
+                      {experimentState.lens.focalLengthCm * 2} cm)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={20}
+                    step={1}
+                    value={experimentState.lens.focalLengthCm}
+                    onChange={(e) => {
+                      const focalLengthCm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        lens: { ...prev.lens, focalLengthCm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
 
               <div className="flex flex-wrap items-center gap-3 shrink-0">
-                <div className="text-xs font-mono tabular-nums text-[#5C5149] px-1">
-                  cos={trigCos.toFixed(3)} · sin={trigSin.toFixed(3)}
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  {lensResult.vCm === null
+                    ? "v = ∞ · Parallel"
+                    : `v = ${lensResult.vCm > 0 ? "+" : ""}${lensResult.vCm} cm · m = ${lensResult.magnification?.toFixed(2)}`}
                 </div>
                 <button
                   type="button"
@@ -3652,12 +4397,1164 @@ export function VirtualLabViewport({
                     labAudio.playClick(600);
                     setExperimentState((prev) => ({
                       ...prev,
-                      trig: { ...prev.trig, sweeping: !prev.trig.sweeping },
+                      lens: { ...prev.lens, lampOn: !prev.lens.lampOn },
                     }));
                   }}
                   className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
                 >
-                  {experimentState.trig.sweeping ? "Stop Sweep" : "Auto-Sweep"}
+                  {experimentState.lens.lampOn ? "Lamp Off" : "Lamp On"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 14: Solenoid Electromagnet Controls */}
+          {activeStation === "electromagnet" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Coil Current (I)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.electromagnet.currentA.toFixed(1)} A
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={5.0}
+                    step={0.5}
+                    value={experimentState.electromagnet.currentA}
+                    onChange={(e) => {
+                      const currentA = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        electromagnet: { ...prev.electromagnet, currentA },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Solenoid Turns (N)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.electromagnet.coilTurns} turns
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={120}
+                    step={10}
+                    value={experimentState.electromagnet.coilTurns}
+                    onChange={(e) => {
+                      const coilTurns = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        electromagnet: { ...prev.electromagnet, coilTurns },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  B = {solenoidFieldMt.toFixed(2)} mT
+                  {solenoidFieldMt >= 3.5 ? " · Clips Lifted!" : ""}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(640);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      electromagnet: {
+                        ...prev.electromagnet,
+                        ironCoreInserted: !prev.electromagnet.ironCoreInserted,
+                      },
+                    }));
+                  }}
+                  className={[
+                    "rounded-xl px-3.5 py-2 text-xs font-medium whitespace-nowrap cursor-pointer transition-colors",
+                    experimentState.electromagnet.ironCoreInserted
+                      ? "bg-[#42335C] text-white"
+                      : "bg-[#E6E0F0] text-[#42335C] hover:bg-[#DBD2EB]",
+                  ].join(" ")}
+                >
+                  {experimentState.electromagnet.ironCoreInserted
+                    ? "Remove Iron Core"
+                    : "Insert Iron Core"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(560);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      electromagnet: {
+                        ...prev.electromagnet,
+                        powerOn: !prev.electromagnet.powerOn,
+                      },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-3.5 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  {experimentState.electromagnet.powerOn ? "Power Off" : "Power On"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 15: Series & Parallel Resistors Controls */}
+          {activeStation === "resistors" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Resistor R₁
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.resistors.r1Ohm} Ω
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={12}
+                    step={1}
+                    value={experimentState.resistors.r1Ohm}
+                    onChange={(e) => {
+                      const r1Ohm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        resistors: { ...prev.resistors, r1Ohm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Resistor R₂
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.resistors.r2Ohm} Ω
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={12}
+                    step={1}
+                    value={experimentState.resistors.r2Ohm}
+                    onChange={(e) => {
+                      const r2Ohm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        resistors: { ...prev.resistors, r2Ohm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  Req = {resistorNet.equivalentOhm.toFixed(2)} Ω · I ={" "}
+                  {resistorNet.totalCurrentA.toFixed(2)} A
+                </div>
+                <div className="inline-flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5">
+                  {(["series", "parallel"] as const).map((m) => {
+                    const active = experimentState.resistors.mode === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          labAudio.playClick(620);
+                          setExperimentState((prev) => ({
+                            ...prev,
+                            resistors: { ...prev.resistors, mode: m },
+                          }));
+                        }}
+                        className={[
+                          "rounded-[10px] px-3 py-1.5 text-xs font-medium capitalize cursor-pointer transition-colors",
+                          active
+                            ? "bg-[#6F4E37] text-white shadow-xs"
+                            : "text-[#5C5149] hover:text-[#231B16]",
+                        ].join(" ")}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 16: Metal Displacement Reaction Controls */}
+          {activeStation === "displacement" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="inline-flex items-center gap-1 rounded-xl bg-[#231B16]/[0.05] p-0.5">
+                  {(
+                    [
+                      { id: "Fe", label: "Iron (Fe)" },
+                      { id: "Zn", label: "Zinc (Zn)" },
+                      { id: "Ag", label: "Silver (Ag)" },
+                    ] as const
+                  ).map((item) => {
+                    const active = experimentState.displacement.metal === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          labAudio.playClick(580);
+                          setExperimentState((prev) => ({
+                            ...prev,
+                            displacement: {
+                              ...prev.displacement,
+                              metal: item.id as DisplacementMetal,
+                              progressPct: 0,
+                            },
+                          }));
+                        }}
+                        className={[
+                          "rounded-[10px] px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors",
+                          active
+                            ? "bg-[#42335C] text-white shadow-xs"
+                            : "text-[#5C5149] hover:text-[#231B16]",
+                        ].join(" ")}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="space-y-1 text-xs min-w-[150px] flex-1">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Bath Temp
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.displacement.tempC}°C
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={60}
+                    step={5}
+                    value={experimentState.displacement.tempC}
+                    onChange={(e) => {
+                      const tempC = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        displacement: { ...prev.displacement, tempC },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  {experimentState.displacement.metal === "Ag"
+                    ? "No reaction (Ag < Cu)"
+                    : `Cu deposit: ${experimentState.displacement.progressPct}%`}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playDrop();
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      displacement: {
+                        ...prev.displacement,
+                        immersed: !prev.displacement.immersed,
+                      },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  {experimentState.displacement.immersed
+                    ? "Lift Strip"
+                    : "Immerse in CuSO₄"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(440);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      displacement: {
+                        ...prev.displacement,
+                        immersed: false,
+                        progressPct: 0,
+                      },
+                    }));
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl border border-[#231B16]/12 bg-white px-3 py-2 text-xs font-medium text-[#231B16] hover:bg-[#F4F1EC] cursor-pointer"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Reset</span>
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 17: Carbon Alkane Tetrahedral Builder Controls */}
+          {activeStation === "carbon" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-2 flex-1">
+                {([1, 2, 3, 4] as const).map((n) => {
+                  const info = calculateCarbonAlkane(n);
+                  const active = experimentState.carbon.carbons === n;
+                  return (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => {
+                        labAudio.playClick(560 + n * 45);
+                        setExperimentState((prev) => ({
+                          ...prev,
+                          carbon: { ...prev.carbon, carbons: n },
+                        }));
+                      }}
+                      className={[
+                        "rounded-xl px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors",
+                        active
+                          ? "bg-[#42335C] text-white shadow-xs"
+                          : "bg-white/80 text-[#231B16] border border-[#231B16]/10 hover:bg-white",
+                      ].join(" ")}
+                    >
+                      {info.name} ({info.formula})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  {alkaneInfo.formula} · {alkaneInfo.molarMass} g/mol · 109.5°
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(600);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      carbon: {
+                        ...prev.carbon,
+                        rotating: !prev.carbon.rotating,
+                      },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  {experimentState.carbon.rotating ? "Pause Spin" : "Spin Model"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 18: Reflex Arc Neural Pathway Controls */}
+          {activeStation === "reflex" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <label className="space-y-1 text-xs flex-1">
+                <div className="flex justify-between">
+                  <span className="font-medium text-[#231B16]">
+                    Nerve Conduction Velocity (v)
+                  </span>
+                  <span className="font-mono tabular-nums text-[#6F4E37]">
+                    {experimentState.reflex.conductionSpeedMs} m/s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={100}
+                  step={5}
+                  value={experimentState.reflex.conductionSpeedMs}
+                  onChange={(e) => {
+                    const conductionSpeedMs = Number(e.target.value);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      reflex: { ...prev.reflex, conductionSpeedMs },
+                    }));
+                  }}
+                  className="w-full lab-slider"
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  t = {reflexTimeMs.toFixed(1)} ms
+                  {experimentState.reflex.lastReactionMs !== null
+                    ? ` · Recorded ${experimentState.reflex.lastReactionMs.toFixed(1)} ms`
+                    : ""}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(740);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      reflex: {
+                        ...prev.reflex,
+                        triggerPulse: prev.reflex.triggerPulse + 1,
+                      },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  Trigger Heat Stimulus
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* 19: Mendelian Monohybrid Pea Cross Controls */}
+          {activeStation === "mendel" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="font-medium text-[#231B16]">Parent 1:</span>
+                  <div className="inline-flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5">
+                    {(["TT", "Tt", "tt"] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => {
+                          labAudio.playClick(560);
+                          setExperimentState((prev) => ({
+                            ...prev,
+                            mendel: {
+                              ...prev.mendel,
+                              parent1: g as MendelGenotype,
+                            },
+                          }));
+                        }}
+                        className={[
+                          "rounded-[10px] px-2.5 py-1 font-mono text-xs cursor-pointer transition-colors",
+                          experimentState.mendel.parent1 === g
+                            ? "bg-[#42335C] text-white shadow-xs"
+                            : "text-[#5C5149] hover:text-[#231B16]",
+                        ].join(" ")}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <span className="text-xs font-semibold text-[#786D65]">×</span>
+
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="font-medium text-[#231B16]">Parent 2:</span>
+                  <div className="inline-flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5">
+                    {(["TT", "Tt", "tt"] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => {
+                          labAudio.playClick(560);
+                          setExperimentState((prev) => ({
+                            ...prev,
+                            mendel: {
+                              ...prev.mendel,
+                              parent2: g as MendelGenotype,
+                            },
+                          }));
+                        }}
+                        className={[
+                          "rounded-[10px] px-2.5 py-1 font-mono text-xs cursor-pointer transition-colors",
+                          experimentState.mendel.parent2 === g
+                            ? "bg-[#42335C] text-white shadow-xs"
+                            : "text-[#5C5149] hover:text-[#231B16]",
+                        ].join(" ")}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  [{mendelResult.offspring.join(" · ")}] · {mendelResult.tallCount} Tall :{" "}
+                  {mendelResult.dwarfCount} Dwarf
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(620);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      mendel: { ...prev.mendel, grown: !prev.mendel.grown },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  {experimentState.mendel.grown
+                    ? "Reset Seedlings"
+                    : "Grow Offspring"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* COMPLEX PHYSICS 09: Young's Double-Slit Interference */}
+          {activeStation === "doubleslit" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Laser Wavelength (λ)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37] inline-flex items-center gap-1.5">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full border border-black/15"
+                        style={{
+                          backgroundColor: `#${wavelengthToHex(experimentState.doubleslit.wavelengthNm).toString(16).padStart(6, "0")}`,
+                        }}
+                      />
+                      {experimentState.doubleslit.wavelengthNm} nm
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={380}
+                    max={700}
+                    step={5}
+                    value={experimentState.doubleslit.wavelengthNm}
+                    onChange={(e) => {
+                      const wavelengthNm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        doubleslit: { ...prev.doubleslit, wavelengthNm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Slit Spacing (d)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.doubleslit.slitSeparationMm.toFixed(2)} mm
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={1.0}
+                    step={0.05}
+                    value={experimentState.doubleslit.slitSeparationMm}
+                    onChange={(e) => {
+                      const slitSeparationMm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        doubleslit: { ...prev.doubleslit, slitSeparationMm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Screen Distance (D)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.doubleslit.screenDistanceM.toFixed(2)} m
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.8}
+                    max={2.0}
+                    step={0.1}
+                    value={experimentState.doubleslit.screenDistanceM}
+                    onChange={(e) => {
+                      const screenDistanceM = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        doubleslit: { ...prev.doubleslit, screenDistanceM },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  β = {doubleSlitMetrics.fringeWidthMm.toFixed(2)} mm · {doubleSlitMetrics.centralOrderCount} fringes
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(640);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      doubleslit: {
+                        ...prev.doubleslit,
+                        laserOn: !prev.doubleslit.laserOn,
+                      },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  {experimentState.doubleslit.laserOn ? "Laser OFF" : "Fire Laser"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* COMPLEX PHYSICS 10: Photoelectric Effect Quantum Phototube */}
+          {activeStation === "photoelectric" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      UV/Light λ
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.photoelectric.wavelengthNm} nm ({photoMetrics.photonEnergyEv.toFixed(2)} eV)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={200}
+                    max={650}
+                    step={5}
+                    value={experimentState.photoelectric.wavelengthNm}
+                    onChange={(e) => {
+                      const wavelengthNm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        photoelectric: { ...prev.photoelectric, wavelengthNm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Collector Voltage (V)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.photoelectric.collectorVoltageV >= 0 ? "+" : ""}
+                      {experimentState.photoelectric.collectorVoltageV.toFixed(2)} V
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-3.0}
+                    max={2.0}
+                    step={0.1}
+                    value={experimentState.photoelectric.collectorVoltageV}
+                    onChange={(e) => {
+                      const collectorVoltageV = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        photoelectric: { ...prev.photoelectric, collectorVoltageV },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Beam Intensity
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.photoelectric.intensityPct}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={20}
+                    max={100}
+                    step={5}
+                    value={experimentState.photoelectric.intensityPct}
+                    onChange={(e) => {
+                      const intensityPct = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        photoelectric: { ...prev.photoelectric, intensityPct },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="inline-flex items-center gap-0.5 rounded-xl bg-[#231B16]/[0.05] p-0.5 text-xs">
+                  {(["Cs", "Na", "Zn"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        labAudio.playClick(620);
+                        setExperimentState((prev) => ({
+                          ...prev,
+                          photoelectric: { ...prev.photoelectric, metal: m },
+                        }));
+                      }}
+                      className={[
+                        "rounded-[10px] px-2.5 py-1 font-mono text-[11px] cursor-pointer transition-colors",
+                        experimentState.photoelectric.metal === m
+                          ? "bg-[#42335C] text-white shadow-xs"
+                          : "text-[#5C5149] hover:text-[#231B16]",
+                      ].join(" ")}
+                    >
+                      {m} ({PHOTO_METAL_WORK_FUNCTION_EV[m].workFunctionEv}eV)
+                    </button>
+                  ))}
+                </div>
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  Kₘₐₓ={photoMetrics.kMaxEv.toFixed(2)}eV · I={photoMetrics.photocurrentUa.toFixed(1)}μA
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* COMPLEX CHEMISTRY 16: Haber-Bosch Ammonia Reactor */}
+          {activeStation === "haber" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Reactor Pressure (P)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.haber.pressureAtm} atm
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50}
+                    max={300}
+                    step={10}
+                    value={experimentState.haber.pressureAtm}
+                    onChange={(e) => {
+                      const pressureAtm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        haber: { ...prev.haber, pressureAtm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Furnace Temperature (T)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.haber.temperatureC} °C
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={300}
+                    max={650}
+                    step={10}
+                    value={experimentState.haber.temperatureC}
+                    onChange={(e) => {
+                      const temperatureC = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        haber: { ...prev.haber, temperatureC },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  NH₃ Yield {haberMetrics.yieldPct.toFixed(1)}% · Rate {haberMetrics.ratePct.toFixed(0)}%
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(600);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      haber: {
+                        ...prev.haber,
+                        catalystOn: !prev.haber.catalystOn,
+                      },
+                    }));
+                  }}
+                  className={[
+                    "rounded-xl px-4 py-2 text-xs font-medium whitespace-nowrap cursor-pointer shadow-xs transition-colors",
+                    experimentState.haber.catalystOn
+                      ? "bg-[#6F4E37] text-white hover:bg-[#5A3E2B]"
+                      : "bg-[#231B16]/10 text-[#231B16] hover:bg-[#231B16]/15",
+                  ].join(" ")}
+                >
+                  Fe/Mo Catalyst: {experimentState.haber.catalystOn ? "ON" : "OFF"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* COMPLEX CHEMISTRY 17: Daniell Galvanic Cell & Nernst EMF */}
+          {activeStation === "galvanic" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      [Cu²⁺] Cathode
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.galvanic.cuConcM.toFixed(2)} M
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={2.0}
+                    step={0.05}
+                    value={experimentState.galvanic.cuConcM}
+                    onChange={(e) => {
+                      const cuConcM = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        galvanic: { ...prev.galvanic, cuConcM },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      [Zn²⁺] Anode
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.galvanic.znConcM.toFixed(2)} M
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={2.0}
+                    step={0.05}
+                    value={experimentState.galvanic.znConcM}
+                    onChange={(e) => {
+                      const znConcM = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        galvanic: { ...prev.galvanic, znConcM },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Cell Temp (T)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.galvanic.tempK} K
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={273}
+                    max={353}
+                    step={5}
+                    value={experimentState.galvanic.tempK}
+                    onChange={(e) => {
+                      const tempK = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        galvanic: { ...prev.galvanic, tempK },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  E = {galvanicMetrics.emfV.toFixed(3)} V · ΔG = {galvanicMetrics.deltaGKj.toFixed(1)} kJ/mol
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playDrop();
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      galvanic: {
+                        ...prev.galvanic,
+                        saltBridgeInserted: !prev.galvanic.saltBridgeInserted,
+                      },
+                    }));
+                  }}
+                  className={[
+                    "rounded-xl px-4 py-2 text-xs font-medium whitespace-nowrap cursor-pointer shadow-xs transition-colors",
+                    experimentState.galvanic.saltBridgeInserted
+                      ? "bg-[#6F4E37] text-white hover:bg-[#5A3E2B]"
+                      : "bg-[#231B16]/10 text-[#231B16] hover:bg-[#231B16]/15",
+                  ].join(" ")}
+                >
+                  KCl Salt Bridge: {experimentState.galvanic.saltBridgeInserted ? "IN" : "OUT"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* COMPLEX BIOLOGY 23: Action Potential & Synapse */}
+          {activeStation === "neuron" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Stimulus Current (I)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.neuron.stimulusUa} μA{" "}
+                      {neuronMetrics.fires ? "(Above Threshold)" : "(Subthreshold)"}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={2}
+                    value={experimentState.neuron.stimulusUa}
+                    onChange={(e) => {
+                      const stimulusUa = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        neuron: { ...prev.neuron, stimulusUa },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Extracellular [Na⁺]ₒ
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.neuron.sodiumMm} mM
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={60}
+                    max={150}
+                    step={5}
+                    value={experimentState.neuron.sodiumMm}
+                    onChange={(e) => {
+                      const sodiumMm = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        neuron: { ...prev.neuron, sodiumMm },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(580);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      neuron: {
+                        ...prev.neuron,
+                        myelinated: !prev.neuron.myelinated,
+                      },
+                    }));
+                  }}
+                  className={[
+                    "rounded-xl px-3 py-2 text-xs font-medium whitespace-nowrap cursor-pointer transition-colors",
+                    experimentState.neuron.myelinated
+                      ? "bg-[#42335C] text-white"
+                      : "bg-[#231B16]/10 text-[#231B16]",
+                  ].join(" ")}
+                >
+                  Myelin: {experimentState.neuron.myelinated ? "ON" : "OFF"}
+                </button>
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  Peak {neuronMetrics.peakMv.toFixed(0)} mV · {neuronMetrics.conductionMs} m/s
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(760);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      neuron: {
+                        ...prev.neuron,
+                        firePulse: prev.neuron.firePulse + 1,
+                      },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  Fire Spike
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* COMPLEX BIOLOGY 24: PCR Thermal Cycler & UV Gel */}
+          {activeStation === "pcr" ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                <label className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#231B16]">
+                      Annealing Temp (Tₐ)
+                    </span>
+                    <span className="font-mono tabular-nums text-[#6F4E37]">
+                      {experimentState.pcr.annealingTempC} °C ({pcrMetrics.specificityPct}% spec.)
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={42}
+                    max={68}
+                    step={1}
+                    value={experimentState.pcr.annealingTempC}
+                    onChange={(e) => {
+                      const annealingTempC = Number(e.target.value);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        pcr: { ...prev.pcr, annealingTempC },
+                      }));
+                    }}
+                    className="w-full lab-slider"
+                  />
+                </label>
+
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      labAudio.playDrop();
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        pcr: { ...prev.pcr, taqActive: !prev.pcr.taqActive },
+                      }));
+                    }}
+                    className={[
+                      "rounded-xl px-3 py-1.5 font-medium cursor-pointer transition-colors whitespace-nowrap",
+                      experimentState.pcr.taqActive
+                        ? "bg-[#42335C] text-white"
+                        : "bg-[#231B16]/10 text-[#231B16]",
+                    ].join(" ")}
+                  >
+                    Taq Polymerase: {experimentState.pcr.taqActive ? "Active" : "Missing"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      labAudio.playClick(640);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        pcr: {
+                          ...prev.pcr,
+                          cycleCount: Math.min(30, prev.pcr.cycleCount + 1),
+                        },
+                      }));
+                    }}
+                    className="rounded-xl bg-[#231B16]/[0.07] px-2.5 py-1.5 font-mono text-[11px] font-medium text-[#231B16] hover:bg-[#231B16]/12 cursor-pointer whitespace-nowrap"
+                  >
+                    +1 Cycle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      labAudio.playClick(680);
+                      setExperimentState((prev) => ({
+                        ...prev,
+                        pcr: {
+                          ...prev.pcr,
+                          cycleCount: Math.min(30, prev.pcr.cycleCount + 5),
+                        },
+                      }));
+                    }}
+                    className="rounded-xl bg-[#231B16]/[0.07] px-2.5 py-1.5 font-mono text-[11px] font-medium text-[#231B16] hover:bg-[#231B16]/12 cursor-pointer whitespace-nowrap"
+                  >
+                    +5 Cycles
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="px-1 text-xs font-mono tabular-nums text-[#5C5149] whitespace-nowrap">
+                  {experimentState.pcr.phaseIndex === 0
+                    ? "94°C Denature"
+                    : experimentState.pcr.phaseIndex === 1
+                      ? `${experimentState.pcr.annealingTempC}°C Anneal`
+                      : "72°C Extend"}{" "}
+                  · n={experimentState.pcr.cycleCount} · {pcrMetrics.dnaCopies.toLocaleString()} copies
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    labAudio.playClick(630);
+                    setExperimentState((prev) => ({
+                      ...prev,
+                      pcr: { ...prev.pcr, running: !prev.pcr.running },
+                    }));
+                  }}
+                  className="rounded-xl bg-[#6F4E37] px-4 py-2 text-xs font-medium text-white hover:bg-[#5A3E2B] whitespace-nowrap cursor-pointer shadow-xs transition-colors"
+                >
+                  {experimentState.pcr.running ? "Pause Cycler" : "Run PCR"}
                 </button>
               </div>
             </div>

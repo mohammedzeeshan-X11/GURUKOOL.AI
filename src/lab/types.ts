@@ -1,34 +1,54 @@
+export type LabRoomId = "physics" | "chemistry" | "biology";
+
 export type StationId =
+  // Physics Lab Room (01–10)
   | "pendulum"
   | "optics"
-  | "titration"
   | "circuit"
+  | "projectile"
+  | "wave"
+  | "lens"
+  | "electromagnet"
+  | "resistors"
+  | "doubleslit"
+  | "photoelectric"
+  // Chemistry Lab Room (11–17)
+  | "titration"
   | "electrolysis"
+  | "boyles"
+  | "displacement"
+  | "carbon"
+  | "haber"
+  | "galvanic"
+  // Biology Lab Room (18–24)
   | "photosynthesis"
   | "microscope"
-  | "projectile"
-  | "boyles"
-  | "wave"
   | "dna"
-  | "trig";
+  | "reflex"
+  | "mendel"
+  | "neuron"
+  | "pcr";
 
 export type LabViewMode =
   | "orbit"
   | "walk"
   | "kid-control"
-  | "ar-camera"
   | "vr-preview"
   | "vr-xr"
+  | "ar-camera"
   | "ar-xr";
 
 export type MicroscopeSpecimen = "onion" | "stomata" | "cheek";
-
 export type DnaBase = "A" | "T" | "C" | "G";
+export type DisplacementMetal = "Fe" | "Zn" | "Ag";
+export type MendelGenotype = "TT" | "Tt" | "tt";
+export type PhotoMetal = "Cs" | "Na" | "Zn";
 
 export interface PendulumState {
   running: boolean;
   lengthM: number;
   amplitudeDeg: number;
+  gravityMs2: number;
   angleRad: number;
   elapsedOscillations: number;
   measuredPeriodS: number;
@@ -41,13 +61,6 @@ export interface OpticsState {
   deviationDeg: number;
 }
 
-export interface TitrationState {
-  acidVolumeMl: number;
-  baseAddedMl: number;
-  currentPh: number;
-  dropPulse: number;
-}
-
 export interface CircuitState {
   switchClosed: boolean;
   voltageV: number;
@@ -55,45 +68,112 @@ export interface CircuitState {
   currentA: number;
 }
 
+export interface ProjectileState {
+  angleDeg: number;
+  speedMs: number;
+  gravityMs2: number;
+  rangeM: number;
+  launchPulse: number;
+  lastLandedRangeM: number | null;
+}
+
+export interface WaveState {
+  running: boolean;
+  frequencyHz: number;
+  tensionN: number;
+  harmonicNumber: number;
+}
+
+export interface LensState {
+  lampOn: boolean;
+  objectDistanceCm: number;
+  focalLengthCm: number;
+}
+
+export interface ElectromagnetState {
+  powerOn: boolean;
+  currentA: number;
+  coilTurns: number;
+  ironCoreInserted: boolean;
+}
+
+export interface ResistorsState {
+  mode: "series" | "parallel";
+  r1Ohm: number;
+  r2Ohm: number;
+  voltageV: number;
+}
+
+export interface DoubleSlitState {
+  laserOn: boolean;
+  wavelengthNm: number;
+  slitSeparationMm: number;
+  screenDistanceM: number;
+}
+
+export interface PhotoelectricState {
+  metal: PhotoMetal;
+  wavelengthNm: number;
+  intensityPct: number;
+  collectorVoltageV: number;
+}
+
+export interface TitrationState {
+  acidVolumeMl: number;
+  baseAddedMl: number;
+  currentPh: number;
+  dropPulse: number;
+}
+
 export interface ElectrolysisState {
   powerOn: boolean;
-  voltageV: number; // 2 to 12 V
-  h2VolumeMl: number; // 0 to 30 mL
-  o2VolumeMl: number; // h2 / 2
+  voltageV: number;
+  h2VolumeMl: number;
+  o2VolumeMl: number;
+}
+
+export interface BoylesState {
+  volumeMl: number;
+  pressureKpa: number;
+}
+
+export interface DisplacementState {
+  metal: DisplacementMetal;
+  immersed: boolean;
+  progressPct: number;
+  tempC: number;
+}
+
+export interface CarbonState {
+  carbons: 1 | 2 | 3 | 4;
+  rotating: boolean;
+}
+
+export interface HaberState {
+  pressureAtm: number;
+  temperatureC: number;
+  catalystOn: boolean;
+}
+
+export interface GalvanicState {
+  saltBridgeInserted: boolean;
+  cuConcM: number;
+  znConcM: number;
+  tempK: number;
 }
 
 export interface PhotosynthesisState {
   lampOn: boolean;
-  lightIntensityPct: number; // 10 to 100
-  co2LevelGl: number; // 0.2 to 2.0
+  lightIntensityPct: number;
+  co2LevelGl: number;
   bubblesPerMin: number;
 }
 
 export interface MicroscopeState {
   illuminatorOn: boolean;
   magnification: 4 | 10 | 40;
-  focusValue: number; // 0 to 100 (sharpest at 50)
+  focusValue: number;
   specimen: MicroscopeSpecimen;
-}
-
-export interface ProjectileState {
-  angleDeg: number; // 15 to 75
-  speedMs: number; // 2.0 to 5.0
-  rangeM: number;
-  launchPulse: number;
-  lastLandedRangeM: number | null;
-}
-
-export interface BoylesState {
-  volumeMl: number; // 10 to 50 mL, P*V = 4000 kPa*mL
-  pressureKpa: number;
-}
-
-export interface WaveState {
-  running: boolean;
-  frequencyHz: number; // 10 to 90 Hz
-  tensionN: number; // 10 to 40 N
-  harmonicNumber: number; // continuous harmonic mode
 }
 
 export interface DnaState {
@@ -102,32 +182,70 @@ export interface DnaState {
   pairedStrand: (DnaBase | null)[];
 }
 
-export interface TrigState {
-  sweeping: boolean;
-  angleDeg: number; // 0 to 360
+export interface ReflexState {
+  conductionSpeedMs: number;
+  triggerPulse: number;
+  lastReactionMs: number | null;
+}
+
+export interface MendelState {
+  parent1: MendelGenotype;
+  parent2: MendelGenotype;
+  grown: boolean;
+}
+
+export interface NeuronState {
+  stimulusUa: number;
+  myelinated: boolean;
+  sodiumMm: number;
+  firePulse: number;
+  lastPeakMv: number | null;
+}
+
+export interface PcrState {
+  running: boolean;
+  annealingTempC: number;
+  cycleCount: number;
+  phaseIndex: 0 | 1 | 2;
+  taqActive: boolean;
 }
 
 export interface LabExperimentState {
   pendulum: PendulumState;
   optics: OpticsState;
-  titration: TitrationState;
   circuit: CircuitState;
+  projectile: ProjectileState;
+  wave: WaveState;
+  lens: LensState;
+  electromagnet: ElectromagnetState;
+  resistors: ResistorsState;
+  doubleslit: DoubleSlitState;
+  photoelectric: PhotoelectricState;
+  titration: TitrationState;
   electrolysis: ElectrolysisState;
+  boyles: BoylesState;
+  displacement: DisplacementState;
+  carbon: CarbonState;
+  haber: HaberState;
+  galvanic: GalvanicState;
   photosynthesis: PhotosynthesisState;
   microscope: MicroscopeState;
-  projectile: ProjectileState;
-  boyles: BoylesState;
-  wave: WaveState;
   dna: DnaState;
-  trig: TrigState;
+  reflex: ReflexState;
+  mendel: MendelState;
+  neuron: NeuronState;
+  pcr: PcrState;
 }
 
 export interface QuestDefinition {
   id: StationId;
+  room: LabRoomId;
   stationNumber: string;
-  discipline: "Physics" | "Chemistry" | "Biology" | "Mathematics";
   title: string;
   subject: string;
+  discipline: "Physics" | "Chemistry" | "Biology";
+  classTag: string;
+  formula: string;
   objective: string;
   hint: string;
   xpReward: number;
@@ -136,6 +254,6 @@ export interface QuestDefinition {
 
 export interface GamificationProgress {
   xp: number;
-  completedQuests: Record<StationId, boolean>;
   rankTitle: string;
+  completedQuests: Record<StationId, boolean>;
 }

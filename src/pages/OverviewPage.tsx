@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
-  BookOpen,
-  CheckCircle2,
+  Atom,
+  Box,
   FlaskConical,
-  GraduationCap,
-  Info,
-  Languages,
+  Leaf,
+  Sparkles,
 } from "lucide-react";
 import { LabSchematicIllustration } from "../components/layout/LabSchematicIllustration";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { SectionHeader } from "../components/ui/SectionHeader";
-import { ErrorState, LoadingState } from "../components/ui/StateFeedback";
+import { LAB_ROOMS, ROOM_ORDER, ROOM_STATIONS } from "../lab/quests";
 import { useRouter } from "../router/RouterContext";
-import { fetchHealthStatus, type HealthStatusResponse } from "../services/api";
 import type { AppRoutePath } from "../types/navigation";
 
 interface WorkspacePillar {
@@ -30,77 +27,28 @@ interface WorkspacePillar {
 const WORKSPACE_PILLARS: readonly WorkspacePillar[] = [
   {
     index: "01",
-    title: "Virtual Laboratories",
-    scope: "3D · Walk-In · WebXR AR/VR",
+    title: "3D Subject Science Laboratories",
+    scope: "Physics · Chemistry · Biology · WebXR AR/VR",
     description:
-      "Walk inside the 3D laboratory, complete 4 gamified experiment quests, or project benches into AR tabletop and VR.",
+      "Walk across 3 dedicated 3D laboratory rooms containing 24 detailed interactive apparatuses — from foundational circuits to quantum double-slit optics, photoelectric tubes, Haber reactors, and PCR thermal cyclers.",
     path: "/labs",
-    actionLabel: "Enter AR/VR Lab",
+    actionLabel: "Enter 3D Laboratories",
     icon: FlaskConical,
   },
   {
     index: "02",
-    title: "Physics 6–10 Curriculum",
-    scope: "NCERT/CBSE & Karnataka Board",
+    title: "AI NCERT Tutor & 3D Simulator",
+    scope: "Any NCERT Concept · Instant 3D Generation",
     description:
-      "Structured placeholder catalog organizing Classes 6–10 Physics experiment topic slots.",
-    path: "/curriculum",
-    actionLabel: "Browse Topic Slots",
-    icon: BookOpen,
-  },
-  {
-    index: "03",
-    title: "Multilingual AI Tutor",
-    scope: "Server-Side Gemini Endpoint",
-    description:
-      "Concept explanations in English, Kannada, and Hindi powered through the backend API.",
+      "Type any NCERT science experiment or concept — or upload a textbook diagram — to get a clear explanation in English, Kannada, or Hindi alongside a live interactive 3D simulation.",
     path: "/tutor",
-    actionLabel: "Open AI Tutor",
-    icon: Languages,
-  },
-  {
-    index: "04",
-    title: "Teacher Workspace",
-    scope: "Classroom Alignment",
-    description:
-      "Dedicated space reserved for guided classroom preparation and board-aligned lesson planning.",
-    path: "/teacher",
-    actionLabel: "View Teacher Space",
-    icon: GraduationCap,
+    actionLabel: "Open AI Tutor & 3D Generator",
+    icon: Sparkles,
   },
 ];
 
 export function OverviewPage() {
   const { navigate } = useRouter();
-  const [health, setHealth] = useState<HealthStatusResponse | null>(null);
-  const [isLoadingHealth, setIsLoadingHealth] = useState(true);
-  const [healthError, setHealthError] = useState<string | null>(null);
-
-  const loadHealth = useCallback(async (signal?: AbortSignal) => {
-    setIsLoadingHealth(true);
-    setHealthError(null);
-    try {
-      const data = await fetchHealthStatus(signal);
-      setHealth(data);
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        return;
-      }
-      setHealthError(
-        err instanceof Error
-          ? err.message
-          : "Unable to verify backend readiness.",
-      );
-    } finally {
-      setIsLoadingHealth(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadHealth(controller.signal);
-    return () => controller.abort();
-  }, [loadHealth]);
 
   return (
     <div className="space-y-12 sm:space-y-16">
@@ -109,13 +57,13 @@ export function OverviewPage() {
         <div className="lg:col-span-6 flex flex-col justify-between space-y-6 py-2">
           <div className="space-y-4">
             <p className="text-xs sm:text-sm font-medium text-[var(--accent-mocha)]">
-              Classes 6–10 · NCERT/CBSE &amp; Karnataka State Board · STEM Laboratory
+              Pocket Labs · Classes 6–12 · NCERT / CBSE &amp; Karnataka State Board
             </p>
             <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight leading-[1.15] text-[var(--text-primary)] text-balance">
-              A clear, modern laboratory foundation for school science and mathematics.
+              Interactive 3D science laboratories and instant AI-generated NCERT simulations.
             </h1>
             <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-xl">
-              PHYSIX AI brings together structured virtual experiment slots, curriculum-aligned concept workspaces, and a server-side multilingual AI tutor across Physics, Chemistry, Biology, and Mathematics.
+              Explore dedicated Physics, Chemistry, and Biology 3D rooms with animated avatar hands, complex multi-variable apparatuses, and AR/VR support — or paste any NCERT concept into AI Tutor to generate a live 3D simulation.
             </p>
           </div>
 
@@ -125,14 +73,14 @@ export function OverviewPage() {
               size="lg"
               onClick={() => navigate("/labs")}
             >
-              Enter AR/VR Lab
+              Enter 3D / AR / VR Labs
             </Button>
             <Button
               variant="secondary"
               size="lg"
-              onClick={() => navigate("/curriculum")}
+              onClick={() => navigate("/tutor")}
             >
-              Physics 6–10 Curriculum
+              AI Tutor &amp; 3D Generator
             </Button>
           </div>
         </div>
@@ -146,11 +94,11 @@ export function OverviewPage() {
       <section className="space-y-6">
         <SectionHeader
           indexLabel="01"
-          title="Platform Workspace Foundation"
-          description="Navigate between the modular areas established in the Step 1 foundation."
+          title="Core Learning Workspaces"
+          description="Hands-on 3D laboratory rooms paired with an on-demand AI NCERT 3D simulation studio."
         />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {WORKSPACE_PILLARS.map((pillar) => {
             const Icon = pillar.icon;
             return (
@@ -198,84 +146,74 @@ export function OverviewPage() {
         </div>
       </section>
 
-      {/* Live Backend & Server-Side Gemini Readiness */}
+      {/* Three Dedicated Subject Rooms Preview */}
       <section className="space-y-6">
         <SectionHeader
           indexLabel="02"
-          title="Environment Readiness"
-          description="Live verification of the Express backend and server-side Gemini integration."
+          title="Three Dedicated Subject Rooms"
+          description="24 foundational & complex science experiments organized into Physics, Chemistry, and Biology wings."
         />
 
-        {isLoadingHealth ? (
-          <LoadingState
-            title="Checking server readiness"
-            message="Verifying connection to the PHYSIX AI backend."
-          />
-        ) : healthError ? (
-          <ErrorState
-            title="Backend readiness check failed"
-            message={healthError}
-            onRetry={() => void loadHealth()}
-          />
-        ) : health ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Card tone="surface" padding="md" className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--status-success-bg)] text-[var(--status-success)]">
-                <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-[var(--status-success)]">
-                  Server Active
-                </p>
-                <h3 className="text-base font-semibold text-[var(--text-primary)]">
-                  Express API Gateway Connected
-                </h3>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  Routing, health probes, and AI requests are served through the backend without exposing client secrets.
-                </p>
-              </div>
-            </Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {ROOM_ORDER.map((roomId) => {
+            const room = LAB_ROOMS[roomId];
+            const Icon =
+              roomId === "physics"
+                ? Atom
+                : roomId === "chemistry"
+                  ? FlaskConical
+                  : Leaf;
+            const iconBoxClass =
+              roomId === "physics"
+                ? "bg-[#EEF2F7] text-[#2F4368]"
+                : roomId === "chemistry"
+                  ? "bg-[#F5ECE4] text-[#6F4E37]"
+                  : "bg-[#EDF5EF] text-[#2D6A4F]";
 
-            <Card tone="surface" padding="md" className="flex items-start gap-4">
-              <div
-                className={[
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-                  health.geminiConfigured
-                    ? "bg-[var(--status-success-bg)] text-[var(--status-success)]"
-                    : "bg-[var(--status-warning-bg)] text-[var(--status-warning)]",
-                ].join(" ")}
+            return (
+              <Card
+                key={roomId}
+                tone="surface"
+                padding="md"
+                className="flex flex-col justify-between gap-4"
               >
-                {health.geminiConfigured ? (
-                  <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-                ) : (
-                  <Info className="h-5 w-5" aria-hidden="true" />
-                )}
-              </div>
-              <div className="space-y-1">
-                <p
-                  className={[
-                    "text-xs font-medium",
-                    health.geminiConfigured
-                      ? "text-[var(--status-success)]"
-                      : "text-[var(--status-warning)]",
-                  ].join(" ")}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div
+                      className={[
+                        "flex h-9 w-9 items-center justify-center rounded-lg",
+                        iconBoxClass,
+                      ].join(" ")}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <span className="font-mono text-xs tabular-nums text-[var(--text-muted)]">
+                      {ROOM_STATIONS[roomId].length} Benches · {room.stationRange}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                    {room.name}
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {room.wingBadge}
+                  </p>
+                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+                    {room.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate("/labs")}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent-mocha)] hover:underline cursor-pointer w-fit"
                 >
-                  {health.geminiConfigured
-                    ? "Configured Server-Side"
-                    : "Awaiting Server Secret"}
-                </p>
-                <h3 className="text-base font-semibold text-[var(--text-primary)]">
-                  Gemini Tutor Integration
-                </h3>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  {health.geminiConfigured
-                    ? "Server-side Gemini credentials are active and ready for AI Tutor explanations."
-                    : "Configure GEMINI_API_KEY in Settings > Secrets to enable live server-side explanations."}
-                </p>
-              </div>
-            </Card>
-          </div>
-        ) : null}
+                  <Box className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Explore {room.shortLabel} Wing</span>
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </Card>
+            );
+          })}
+        </div>
       </section>
     </div>
   );

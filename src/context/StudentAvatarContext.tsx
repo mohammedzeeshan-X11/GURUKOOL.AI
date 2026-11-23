@@ -29,16 +29,16 @@ export interface StudentAvatarProfile {
 }
 
 export const SKIN_TONE_PRESETS = [
-  { id: "fair", label: "Porcelain", hex: "#F1C9AE" },
+  { id: "fair", label: "Warm Peach", hex: "#F8C99E" },
   { id: "wheat", label: "Warm Wheat", hex: "#D9A37C" },
   { id: "amber", label: "Golden Tan", hex: "#B57952" },
   { id: "deep", label: "Deep Umber", hex: "#764932" },
 ] as const;
 
 export const HAIR_COLOR_PRESETS = [
-  { id: "espresso", label: "Espresso", hex: "#231B16" },
-  { id: "chestnut", label: "Chestnut", hex: "#5C3A28" },
-  { id: "auburn", label: "Auburn", hex: "#8B4229" },
+  { id: "chestnut", label: "Chestnut", hex: "#8A4B24" },
+  { id: "espresso", label: "Espresso", hex: "#2A1E17" },
+  { id: "auburn", label: "Auburn", hex: "#A14B28" },
   { id: "slate", label: "Silver Slate", hex: "#6B6765" },
 ] as const;
 
@@ -47,10 +47,10 @@ export const LAB_COAT_PRESETS: Record<
   { label: string; coatHex: string; collarHex: string; trimHex: string }
 > = {
   platinum: {
-    label: "Platinum Coat",
-    coatHex: "#FAF8F5",
-    collarHex: "#E5E4E2",
-    trimHex: "#6F4E37",
+    label: "Classic White Coat",
+    coatHex: "#FFFFFF",
+    collarHex: "#E8EEF4",
+    trimHex: "#1D8A70",
   },
   mocha: {
     label: "Mocha Coat",
@@ -77,14 +77,14 @@ export const DEFAULT_STUDENT_AVATAR: StudentAvatarProfile = {
   classLevel: "Class 8",
   board: "NCERT / CBSE",
   language: "English",
-  skinTone: "#D9A37C",
+  skinTone: "#F8C99E",
   hairStyle: "short",
-  hairColor: "#231B16",
+  hairColor: "#8A4B24",
   labCoat: "platinum",
   goggles: true,
 };
 
-const STORAGE_KEY = "physix_student_avatar_v1";
+const STORAGE_KEY = "pocket_labs_student_avatar_v2";
 
 function isValidLanguage(value: unknown): value is TutorLanguage {
   return value === "English" || value === "Kannada" || value === "Hindi";

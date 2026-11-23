@@ -1,3 +1,5 @@
+import type { TutorConceptResponse } from "../types/simulation3d";
+
 export interface HealthStatusResponse {
   status: string;
   service: string;
@@ -11,11 +13,8 @@ export interface TutorExplainRequest {
   classLevel: string;
   board: string;
   language: string;
-}
-
-export interface TutorExplainResponse {
-  explanation: string;
-  model: string;
+  imageBase64?: string;
+  imageMimeType?: string;
 }
 
 export async function fetchHealthStatus(
@@ -30,16 +29,14 @@ export async function fetchHealthStatus(
 
 export async function requestTutorExplanation(
   payload: TutorExplainRequest,
-): Promise<TutorExplainResponse> {
+): Promise<TutorConceptResponse> {
   const response = await fetch("/api/tutor/explain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
-  const data = (await response.json().catch(() => ({}))) as {
-    explanation?: string;
-    model?: string;
+  const data = (await response.json().catch(() => ({}))) as Partial<TutorConceptResponse> & {
     error?: string;
   };
 
@@ -49,14 +46,11 @@ export async function requestTutorExplanation(
     );
   }
 
-  if (!data.explanation) {
-    throw new Error("Server returned an empty explanation.");
+  if (!data.explanation || !data.scene3d) {
+    throw new Error("Server returned an incomplete concept simulation.");
   }
 
-  return {
-    explanation: data.explanation,
-    model: data.model || "gemini-4-hydrogen",
-  };
+  return data as TutorConceptResponse;
 }
 
 export type MentorVoiceName = "Zephyr" | "Puck" | "Kore" | "Charon" | "Fenrir";

@@ -1,6 +1,18 @@
 import type { TutorLanguage } from "../types/navigation";
 import type { LabExperimentState, StationId } from "./types";
 import {
+  calculateCarbonAlkane,
+  calculateDoubleSlitMetrics,
+  calculateGalvanicMetrics,
+  calculateHaberMetrics,
+  calculateLensImage,
+  calculateMendelOffspring,
+  calculateNeuronMetrics,
+  calculatePcrMetrics,
+  calculatePhotoelectricMetrics,
+  calculateReflexTimeMs,
+  calculateResistorsNetwork,
+  calculateSolenoidFieldMt,
   DNA_TEMPLATE_STRAND,
   evaluateDnaMatches,
   LAB_QUESTS,
@@ -485,36 +497,493 @@ export const EXPERIMENT_EXPLAINABILITY: Record<
     },
   },
 
-  trig: {
-    id: "trig",
-    governingPrinciple: "Unit Circle Projections & Pythagorean Identity",
-    formula: "x = cos θ   ·   y = sin θ   ·   sin²θ + cos²θ = 1",
+  lens: {
+    id: "lens",
+    governingPrinciple: "Thin Convex Lens Equation & Optical Magnification",
+    formula: "1/f = 1/v − 1/u , m = v / u",
     variables: [
-      { symbol: "θ", meaning: "Counter-clockwise phasor angle from +X axis (° or rad)" },
-      { symbol: "cos θ", meaning: "Horizontal projection onto the X-axis" },
-      { symbol: "sin θ", meaning: "Vertical projection onto the Y-axis" },
+      { symbol: "f", meaning: "Focal length of the convex lens (cm)" },
+      { symbol: "u", meaning: "Object distance from optical center (cm, negative)" },
+      { symbol: "v", meaning: "Image distance on screen (cm)" },
     ],
     whyItHappens:
-      "Any point on a circle of radius r = 1 forms a right triangle with hypotenuse 1, base cos θ, and height sin θ. By Pythagoras' theorem, the squared projections always sum to 1 regardless of quadrant.",
+      "A convex lens converges parallel light rays to its principal focus F. Depending on where the object sits relative to F and 2F, rays intersect on the far side to form a real inverted image—or appear to diverge from a magnified virtual image.",
     observationGuide: [
-      "Drag Phasor Angle (θ) or start Auto-Sweep to trace the radius arm around all 4 quadrants.",
-      "Track the horizontal Mocha leg (cos θ) and vertical Lavender leg (sin θ) changing sign across quadrants.",
-      "Set θ = 60° (π/3 rad) to verify cos(60°) = 0.500 and sin(60°) ≈ 0.866.",
+      "Keep the illuminated object lamp ON and slide Object Distance u toward 2f.",
+      "Watch the screen glide to v = +2f as the inverted image becomes the exact same size (|m| = 1.00).",
+      "Move the object closer than f to see why real image rays stop converging onto the screen.",
     ],
     realWorldApplication:
-      "Used in AC alternating-current phasors, GPS satellite triangulation, 3D graphics rotations, and signal processing (FFT).",
+      "Governs camera lenses, classroom projectors, magnifying glasses, and corrective spectacles for hypermetropia.",
     interpretLiveState: (state) => {
-      const deg = Math.round(state.trig.angleDeg);
-      const rad = (deg * Math.PI) / 180;
-      const cosVal = Math.cos(rad);
-      const sinVal = Math.sin(rad);
-      const near60 = Math.abs(deg - 60) <= 2;
+      const img = calculateLensImage(
+        state.lens.objectDistanceCm,
+        state.lens.focalLengthCm,
+      );
+      if (!state.lens.lampOn) {
+        return {
+          statusLabel: "Lamp Off",
+          summary: "The illuminated object source is off.",
+          nextStep: "Turn the lamp ON and move u to twice the focal length (2F).",
+        };
+      }
+      if (img.nature === "real-inverted" && img.vCm !== null && img.magnification !== null) {
+        const at2F = Math.abs(Math.abs(img.magnification) - 1.0) <= 0.08;
+        return {
+          statusLabel: at2F ? "2F Equal Image" : "Real Image",
+          summary: `u = ${img.uCm} cm, f = ${state.lens.focalLengthCm} cm gives a real inverted image at v = +${img.vCm} cm (m = ${img.magnification}).`,
+          nextStep: at2F
+            ? "Equal-size real image at 2F verified! Try moving closer toward F to magnify it."
+            : `Slide Object Distance toward ${(state.lens.focalLengthCm * 2).toFixed(0)} cm (2F) so |m| reaches 1.00.`,
+        };
+      }
       return {
-        statusLabel: near60 ? "60° Verified" : "Phasor Projection",
-        summary: `At θ = ${deg}° (${(rad / Math.PI).toFixed(2)}π rad): cos(θ) = ${cosVal.toFixed(3)}, sin(θ) = ${sinVal.toFixed(3)}, and sin²θ + cos²θ = ${(cosVal * cosVal + sinVal * sinVal).toFixed(3)}.`,
-        nextStep: near60
-          ? "Exact special-angle ratio verified! Toggle Auto-Sweep to inspect quadrants II–IV."
-          : "Slide Phasor Angle directly to 60° (π/3 rad) to verify cos(60°) = 0.500.",
+        statusLabel: img.nature === "infinity" ? "At Focus F" : "Virtual Image",
+        summary: `At u = ${img.uCm} cm with f = ${state.lens.focalLengthCm} cm, rays do not form a real image on the screen.`,
+        nextStep: `Increase Object Distance beyond ${state.lens.focalLengthCm} cm to project a real inverted image.`,
+      };
+    },
+  },
+
+  electromagnet: {
+    id: "electromagnet",
+    governingPrinciple: "Magnetic Field Inside a Current-Carrying Solenoid",
+    formula: "B = μᵣ · μ₀ · (N / L) · I",
+    variables: [
+      { symbol: "B", meaning: "Magnetic flux density inside the solenoid (mT)" },
+      { symbol: "N", meaning: "Number of copper coil turns" },
+      { symbol: "I", meaning: "Electric current flowing through the coil (A)" },
+    ],
+    whyItHappens:
+      "Every loop of current produces a circular magnetic field that adds constructively down the solenoid axis. Sliding a soft-iron core inside aligns its magnetic domains, dramatically multiplying field strength and deflecting the nearby compass needle.",
+    observationGuide: [
+      "Switch power ON and raise Current (I) and Coil Turns (N) while watching the compass needle deflect.",
+      "Insert the Soft-Iron Core to amplify the magnetic flux density fourfold.",
+      "Tune I and N with the core inserted to push magnetic flux past 12.0 mT.",
+    ],
+    realWorldApplication:
+      "Powers electric bells, MRI superconducting coils, scrapyard cranes, relays, and speakers.",
+    interpretLiveState: (state) => {
+      const bMt = calculateSolenoidFieldMt(
+        state.electromagnet.powerOn,
+        state.electromagnet.currentA,
+        state.electromagnet.coilTurns,
+        state.electromagnet.ironCoreInserted,
+      );
+      if (!state.electromagnet.powerOn) {
+        return {
+          statusLabel: "Power Off",
+          summary: "Current is off so the solenoid produces 0.00 mT.",
+          nextStep: "Turn Power ON and insert the soft-iron core to energize the electromagnet.",
+        };
+      }
+      const strong = state.electromagnet.ironCoreInserted && bMt >= 12;
+      return {
+        statusLabel: strong ? "High Flux" : "Energized",
+        summary: `B = ${bMt.toFixed(2)} mT at I = ${state.electromagnet.currentA.toFixed(1)} A, N = ${state.electromagnet.coilTurns} turns (${state.electromagnet.ironCoreInserted ? "iron core inserted" : "air core"}).`,
+        nextStep: strong
+          ? "Strong 12+ mT solenoid field achieved!"
+          : "Insert the soft-iron core and raise Current & Turns until B reaches at least 12.0 mT.",
+      };
+    },
+  },
+
+  resistors: {
+    id: "resistors",
+    governingPrinciple: "Series vs Parallel Combination of Resistors",
+    formula: "Series: R = R₁ + R₂ · Parallel: 1/R = 1/R₁ + 1/R₂",
+    variables: [
+      { symbol: "R₁, R₂", meaning: "Individual branch resistances (Ω)" },
+      { symbol: "R", meaning: "Equivalent total circuit resistance (Ω)" },
+      { symbol: "I", meaning: "Total current drawn from 12 V supply (A)" },
+    ],
+    whyItHappens:
+      "In series, electrons must pass through both resistors sequentially so resistances add up. In parallel, current splits across two paths, reducing equivalent resistance below even the smallest resistor and brightening the bulb.",
+    observationGuide: [
+      "Compare the bulb brightness and electron speed in Series versus Parallel mode.",
+      "Switch to Parallel mode and note how R_eq drops below both R₁ and R₂.",
+      "Lower R₁ and R₂ in parallel so R_eq ≤ 2.50 Ω.",
+    ],
+    realWorldApplication:
+      "Home electrical appliances are wired in parallel so every socket gets full mains voltage and operates independently.",
+    interpretLiveState: (state) => {
+      const net = calculateResistorsNetwork(
+        state.resistors.mode,
+        state.resistors.r1Ohm,
+        state.resistors.r2Ohm,
+        state.resistors.voltageV,
+      );
+      const goalMet = state.resistors.mode === "parallel" && net.equivalentOhm <= 2.5;
+      return {
+        statusLabel: goalMet ? "Low-R Parallel" : state.resistors.mode === "parallel" ? "Parallel" : "Series",
+        summary: `${state.resistors.mode === "parallel" ? "Parallel" : "Series"} combination of ${state.resistors.r1Ohm} Ω and ${state.resistors.r2Ohm} Ω yields R_eq = ${net.equivalentOhm.toFixed(2)} Ω and I = ${net.totalCurrentA.toFixed(2)} A.`,
+        nextStep: goalMet
+          ? "Parallel network verified! Notice how current surges when paths run side by side."
+          : "Switch to Parallel mode and lower R₁ and R₂ until equivalent resistance is 2.50 Ω or below.",
+      };
+    },
+  },
+
+  displacement: {
+    id: "displacement",
+    governingPrinciple: "Single Displacement & Metal Reactivity Series",
+    formula: "Fe(s) + CuSO₄(aq) → FeSO₄(aq) + Cu(s)",
+    variables: [
+      { symbol: "Fe", meaning: "More reactive iron strip displacing copper" },
+      { symbol: "CuSO₄", meaning: "Blue aqueous copper(II) sulfate solution" },
+      { symbol: "FeSO₄", meaning: "Pale green aqueous iron(II) sulfate formed" },
+    ],
+    whyItHappens:
+      "Iron sits above copper in the reactivity series, so iron atoms donate electrons to Cu²⁺ ions in solution—turning blue CuSO₄ pale green FeSO₄ while depositing reddish-brown metallic copper onto the strip. Silver is less reactive than copper and shows no reaction.",
+    observationGuide: [
+      "Select Iron (Fe) and click Immerse Strip to dip it into blue CuSO₄.",
+      "Watch the solution fade toward pale green while reddish-brown copper coats the strip.",
+      "Compare with Silver (Ag) to verify that less-reactive metals cannot displace copper.",
+    ],
+    realWorldApplication:
+      "Used in hydrometallurgical copper extraction, electroplating pretreatment, and thermite rail welding.",
+    interpretLiveState: (state) => {
+      const { metal, immersed, progressPct } = state.displacement;
+      if (metal === "Ag") {
+        return {
+          statusLabel: "No Reaction",
+          summary: "Silver (Ag) is below copper in the reactivity series, so blue CuSO₄ remains unchanged.",
+          nextStep: "Switch the strip to Iron (Fe) and immerse it to observe real displacement.",
+        };
+      }
+      if (!immersed) {
+        return {
+          statusLabel: "Ready",
+          summary: `${metal} strip is suspended above blue CuSO₄ (${Math.round(progressPct)}% reacted).`,
+          nextStep: "Click Immerse Strip to start the single displacement reaction.",
+        };
+      }
+      const done = metal === "Fe" && progressPct >= 85;
+      return {
+        statusLabel: done ? "Displaced" : "Reacting",
+        summary: `${metal} is displacing Cu²⁺ ions (${Math.round(progressPct)}% complete) with reddish-brown copper plating on the strip.`,
+        nextStep: done
+          ? "Iron displacement complete! Try testing Silver (Ag) to compare reactivity."
+          : "Let the iron strip react until displacement passes 85%.",
+      };
+    },
+  },
+
+  carbon: {
+    id: "carbon",
+    governingPrinciple: "Catenation & Homologous Alkane Series",
+    formula: "CₙH₂ₙ₊₂ (Saturated Hydrocarbons)",
+    variables: [
+      { symbol: "n", meaning: "Number of carbon atoms in the backbone chain" },
+      { symbol: "2n+2", meaning: "Number of single-bonded hydrogen atoms" },
+      { symbol: "109.5°", meaning: "Tetrahedral covalent bond angle around carbon" },
+    ],
+    whyItHappens:
+      "Carbon is tetravalent (4 valence electrons) and forms strong single covalent C–C chains via catenation. Each successive alkane member differs by one –CH₂– unit and 14 u of molecular mass.",
+    observationGuide: [
+      "Step carbon count n from 1 (Methane) up to 4 (Butane) and verify the 2n+2 hydrogen count.",
+      "Inspect the 3D zig-zag tetrahedral geometry around every charcoal carbon atom.",
+      "Select n = 3 (Propane, C₃H₈) with rotation ON to complete the build.",
+    ],
+    realWorldApplication:
+      "Methane (CNG), propane and butane (LPG cooking fuel) form clean-burning domestic and industrial fuels.",
+    interpretLiveState: (state) => {
+      const alk = calculateCarbonAlkane(state.carbon.carbons);
+      const isPropane = state.carbon.carbons === 3 && state.carbon.rotating;
+      return {
+        statusLabel: alk.formula,
+        summary: `${alk.name} (${alk.formula}) has ${state.carbon.carbons} carbon atoms, ${alk.hydrogens} hydrogens, and molar mass ${alk.molarMass} g/mol.`,
+        nextStep: isPropane
+          ? "Propane C₃H₈ verified! Notice each carbon forms exactly four covalent bonds."
+          : "Select n = 3 (Propane) with rotation enabled to inspect its 3-carbon tetrahedral chain.",
+      };
+    },
+  },
+
+  reflex: {
+    id: "reflex",
+    governingPrinciple: "Spinal Reflex Arc & Myelinated Nerve Conduction",
+    formula: "t = d / v (Reflex Latency)",
+    variables: [
+      { symbol: "t", meaning: "Total reflex latency from stimulus to muscle twitch (ms)" },
+      { symbol: "d", meaning: "Total sensory + motor axon arc distance (~1.6 m)" },
+      { symbol: "v", meaning: "Action-potential conduction velocity (m/s)" },
+    ],
+    whyItHappens:
+      "When a heat receptor detects danger, sensory neurons fire directly to the spinal cord's relay interneuron, which immediately commands motor neurons to contract the muscle—protecting the body milliseconds before the conscious brain reacts.",
+    observationGuide: [
+      "Click Trigger Stimulus and follow the golden action potential from heat pad to spinal cord to muscle.",
+      "Raise Nerve Speed toward 80–100 m/s to model myelinated saltatory conduction.",
+      "Trigger again at ≥ 80 m/s to record a reflex latency under 20 ms.",
+    ],
+    realWorldApplication:
+      "Explains automatic withdrawal from hot objects, knee-jerk clinical neurological exams, and pupil light reflexes.",
+    interpretLiveState: (state) => {
+      const tMs = calculateReflexTimeMs(state.reflex.conductionSpeedMs);
+      const fast = state.reflex.lastReactionMs !== null && state.reflex.lastReactionMs <= 20;
+      return {
+        statusLabel: fast ? "Fast Reflex" : `${tMs.toFixed(1)} ms`,
+        summary: `At v = ${state.reflex.conductionSpeedMs} m/s across the 1.6 m spinal arc, theoretical reflex time is ${tMs.toFixed(1)} ms.`,
+        nextStep: fast
+          ? "Fast myelinated reflex under 20 ms completed!"
+          : "Slide Nerve Conduction Speed to at least 80 m/s and click Trigger Stimulus.",
+      };
+    },
+  },
+
+  mendel: {
+    id: "mendel",
+    governingPrinciple: "Mendel's Law of Dominance & Segregation (Monohybrid Cross)",
+    formula: "Tt × Tt → 1 TT : 2 Tt : 1 tt (3 Tall : 1 Dwarf)",
+    variables: [
+      { symbol: "T", meaning: "Dominant allele for Tall pea stem" },
+      { symbol: "t", meaning: "Recessive allele for Dwarf pea stem" },
+      { symbol: "F₂", meaning: "Second filial generation offspring tray" },
+    ],
+    whyItHappens:
+      "Each parent passes one randomly segregated allele to each gamete. Because T is dominant over t, both TT and Tt offspring grow tall, while only homozygous recessive tt produces a dwarf pea plant—revealing the hidden recessive trait in F₂.",
+    observationGuide: [
+      "Choose genotypes for Parent 1 and Parent 2 (TT, Tt, or tt).",
+      "Click Grow F₂ Plants to sprout the 4 Punnett-square pea pots in 3D.",
+      "Cross Tt × Tt to observe 3 tall plants and 1 dwarf plant (3:1 phenotypic ratio).",
+    ],
+    realWorldApplication:
+      "Forms the foundation of crop breeding, genetic counseling, and inherited trait prediction.",
+    interpretLiveState: (state) => {
+      const res = calculateMendelOffspring(state.mendel.parent1, state.mendel.parent2);
+      const goalMet =
+        state.mendel.grown &&
+        state.mendel.parent1 === "Tt" &&
+        state.mendel.parent2 === "Tt";
+      return {
+        statusLabel: state.mendel.grown
+          ? `${res.tallCount} Tall : ${res.dwarfCount} Dwarf`
+          : "Seeds Ready",
+        summary: `Cross ${state.mendel.parent1} × ${state.mendel.parent2} yields [${res.offspring.join(", ")}] (${res.tallCount} Tall, ${res.dwarfCount} Dwarf).`,
+        nextStep: goalMet
+          ? "Classic 3:1 Mendelian F₂ ratio verified!"
+          : "Set both Parent 1 and Parent 2 to Tt, then click Grow F₂ Plants.",
+      };
+    },
+  },
+
+  doubleslit: {
+    id: "doubleslit",
+    governingPrinciple: "Wave Superposition & Young's Double-Slit Interference",
+    formula: "β = λD / d · I(y) = I₀ cos²(πdy / λD)",
+    variables: [
+      { symbol: "λ", meaning: "Monochromatic laser wavelength (nm)" },
+      { symbol: "d", meaning: "Center-to-center slit separation (mm)" },
+      { symbol: "D", meaning: "Distance from double slit to screen (m)" },
+      { symbol: "β", meaning: "Fringe width between consecutive bright maxima (mm)" },
+    ],
+    whyItHappens:
+      "Coherent light passing through two narrow slits diffracts into overlapping cylindrical waves. Where path difference equals nλ, waves interfere constructively to form bright fringes; where it equals (n + ½)λ, they cancel into dark bands.",
+    observationGuide: [
+      "Change wavelength from violet (400 nm) to red (680 nm) and watch the fringes spread wider.",
+      "Narrow the slit separation d to see fringe spacing β grow inversely.",
+      "Tune λ, d, and D to lock fringe width β between 1.15 mm and 1.35 mm.",
+    ],
+    realWorldApplication:
+      "Drives optical interferometers like LIGO gravitational-wave detectors, holography, and anti-reflective lens coatings.",
+    interpretLiveState: (state) => {
+      const m = calculateDoubleSlitMetrics(
+        state.doubleslit.wavelengthNm,
+        state.doubleslit.slitSeparationMm,
+        state.doubleslit.screenDistanceM,
+      );
+      const hit = state.doubleslit.laserOn && m.fringeWidthMm >= 1.15 && m.fringeWidthMm <= 1.35;
+      return {
+        statusLabel: state.doubleslit.laserOn ? `β = ${m.fringeWidthMm.toFixed(2)} mm` : "Laser Off",
+        summary: `At λ = ${state.doubleslit.wavelengthNm} nm, d = ${state.doubleslit.slitSeparationMm.toFixed(2)} mm, D = ${state.doubleslit.screenDistanceM.toFixed(2)} m, fringe spacing β = ${m.fringeWidthMm.toFixed(2)} mm.`,
+        nextStep: hit
+          ? "Target interference fringe spacing locked in!"
+          : "Keep Laser ON and tune λ, d, or D until β lands between 1.15 and 1.35 mm.",
+      };
+    },
+  },
+
+  photoelectric: {
+    id: "photoelectric",
+    governingPrinciple: "Einstein's Photoelectric Equation & Energy Quantization",
+    formula: "K_max = hc/λ − φ₀ = eV₀",
+    variables: [
+      { symbol: "hν", meaning: "Incident photon energy = 1240 / λ(nm) in eV" },
+      { symbol: "φ₀", meaning: "Metal work function threshold (eV)" },
+      { symbol: "V₀", meaning: "Stopping potential required to halt the fastest electrons (V)" },
+    ],
+    whyItHappens:
+      "Light arrives in discrete packets (photons). Only photons with energy above the metal's work function φ₀ can eject electrons; raising intensity increases electron count (current), whereas only shorter wavelength raises their maximum kinetic energy and stopping potential.",
+    observationGuide: [
+      "Switch between Cesium (2.14 eV), Sodium (2.75 eV), and Zinc (4.30 eV) to compare thresholds.",
+      "Shorten wavelength below the threshold to watch blue photoelectrons stream across the vacuum tube.",
+      "Apply negative Collector Voltage to find the exact Stopping Potential where electrons turn around.",
+    ],
+    realWorldApplication:
+      "Powers solar photovoltaic panels, digital camera CMOS sensors, night-vision tubes, and automatic streetlights.",
+    interpretLiveState: (state) => {
+      const pe = calculatePhotoelectricMetrics(
+        state.photoelectric.metal,
+        state.photoelectric.wavelengthNm,
+        state.photoelectric.intensityPct,
+        state.photoelectric.collectorVoltageV,
+      );
+      const goal = state.photoelectric.metal === "Na" && pe.kMaxEv >= 0.8 && pe.photocurrentUa === 0;
+      return {
+        statusLabel: pe.emitting ? `I = ${pe.photocurrentUa} μA` : "Below Threshold",
+        summary: `Photon E = ${pe.photonEnergyEv} eV vs φ₀(${state.photoelectric.metal}) = ${pe.workFunctionEv} eV → K_max = ${pe.kMaxEv} eV, V₀ = ${pe.stoppingPotentialV} V, Current = ${pe.photocurrentUa} μA.`,
+        nextStep: goal
+          ? "Stopping potential cutoff verified on Sodium!"
+          : "Pick Sodium (Na), lower λ so K_max ≥ 0.8 eV, and dial Collector Voltage negative until I = 0.0 μA.",
+      };
+    },
+  },
+
+  haber: {
+    id: "haber",
+    governingPrinciple: "Le Chatelier's Principle & Industrial Reaction Kinetics",
+    formula: "N₂(g) + 3H₂(g) ⇌ 2NH₃(g),  ΔH = −92.4 kJ/mol",
+    variables: [
+      { symbol: "P", meaning: "Reactor pressure (atm) — shifts 4 mol gas toward 2 mol NH₃" },
+      { symbol: "T", meaning: "Reactor temperature (°C) — trades exothermic yield for faster kinetics" },
+      { symbol: "Fe", meaning: "Porous Iron catalyst — accelerates rate without changing equilibrium" },
+    ],
+    whyItHappens:
+      "Because ammonia synthesis is exothermic and reduces gas moles from 4 to 2, high pressure increases yield while high temperature pushes equilibrium backward. Industrial plants use an Iron catalyst with a compromise temperature (~450 °C) and high pressure (~250 atm).",
+    observationGuide: [
+      "Toggle the Iron Catalyst bed ON and watch molecule velocity jump without lowering yield.",
+      "Raise Pressure above 220 atm to shift green NH₃ molecules upward.",
+      "Balance Temperature (~430–470 °C) to achieve Yield ≥ 45% AND Rate ≥ 65% simultaneously.",
+    ],
+    realWorldApplication:
+      "The Haber–Bosch process produces ammonia fertilizers that sustain nearly half of the world's agricultural food supply.",
+    interpretLiveState: (state) => {
+      const m = calculateHaberMetrics(
+        state.haber.pressureAtm,
+        state.haber.temperatureC,
+        state.haber.catalystOn,
+      );
+      const goal = state.haber.catalystOn && m.yieldPct >= 45 && m.ratePct >= 65;
+      return {
+        statusLabel: `Yield ${m.yieldPct}% · Rate ${m.ratePct}%`,
+        summary: `At ${state.haber.pressureAtm} atm, ${state.haber.temperatureC} °C (${state.haber.catalystOn ? "Fe Catalyst ON" : "No Catalyst"}), NH₃ yield is ${m.yieldPct}% with kinetic rate ${m.ratePct}%.`,
+        nextStep: goal
+          ? "Optimal Haber–Bosch industrial compromise achieved!"
+          : "Turn Iron Catalyst ON, raise Pressure ≥ 220 atm, and tune Temperature ~440–470 °C.",
+      };
+    },
+  },
+
+  galvanic: {
+    id: "galvanic",
+    governingPrinciple: "Daniell Galvanic Cell & Nernst Electrochemical Potential",
+    formula: "E_cell = 1.10 V − (RT / 2F) ln([Zn²⁺] / [Cu²⁺])",
+    variables: [
+      { symbol: "E°", meaning: "Standard cell EMF = +1.10 V at 1 M, 298 K" },
+      { symbol: "Q", meaning: "Reaction quotient [Zn²⁺] / [Cu²⁺]" },
+      { symbol: "ΔG", meaning: "Gibbs free energy change = −nFE_cell (kJ/mol)" },
+    ],
+    whyItHappens:
+      "Zinc oxidizes at the anode (releasing electrons to the external wire) while Cu²⁺ reduces onto the Copper cathode. The KCl salt bridge maintains electrical neutrality by migrating K⁺ and Cl⁻ ions; raising reactant [Cu²⁺] and lowering product [Zn²⁺] increases EMF above 1.10 V.",
+    observationGuide: [
+      "Remove the KCl Salt Bridge to observe the circuit immediately drop to 0.000 V.",
+      "Re-insert the Salt Bridge and watch electrons flow from Zn → Cu while ions migrate.",
+      "Raise [Cu²⁺] near 2.0 M and lower [Zn²⁺] near 0.02 M to push EMF ≥ 1.15 V.",
+    ],
+    realWorldApplication:
+      "Underpins lithium-ion EV batteries, alkaline cells, pH meters, and corrosion protection engineering.",
+    interpretLiveState: (state) => {
+      const m = calculateGalvanicMetrics(
+        state.galvanic.saltBridgeInserted,
+        state.galvanic.cuConcM,
+        state.galvanic.znConcM,
+        state.galvanic.tempK,
+      );
+      const goal = state.galvanic.saltBridgeInserted && m.emfV >= 1.15;
+      return {
+        statusLabel: state.galvanic.saltBridgeInserted ? `${m.emfV.toFixed(3)} V` : "Open Circuit",
+        summary: `Q = ${m.reactionQuotientQ}, T = ${state.galvanic.tempK} K → E_cell = ${m.emfV.toFixed(3)} V, ΔG = ${m.deltaGKj} kJ/mol.`,
+        nextStep: goal
+          ? "High-EMF Nernst concentration gradient verified!"
+          : "Insert Salt Bridge, raise [Cu²⁺] high and lower [Zn²⁺] so E_cell reaches ≥ 1.15 V.",
+      };
+    },
+  },
+
+  neuron: {
+    id: "neuron",
+    governingPrinciple: "Hodgkin–Huxley All-or-None Action Potential & Synaptic Transmission",
+    formula: "V_m: −70 mV (Rest) → −55 mV (Threshold) → +40 mV (Na⁺ Influx)",
+    variables: [
+      { symbol: "I_stim", meaning: "Injected depolarizing stimulus current (μA)" },
+      { symbol: "[Na⁺]ₒ", meaning: "Extracellular sodium concentration driving depolarization peak (mM)" },
+      { symbol: "Myelin", meaning: "Insulating Schwann sheath enabling 105 m/s saltatory conduction" },
+    ],
+    whyItHappens:
+      "Once stimulus depolarizes the axon past −55 mV, voltage-gated Na⁺ channels snap open, flooding positive ions inward to +40 mV. K⁺ channels then repolarize the membrane, while the wave triggers neurotransmitter vesicle release across the synaptic cleft.",
+    observationGuide: [
+      "Fire with Stimulus < 50 μA to see a failed sub-threshold blip on the oscilloscope.",
+      "Enable Myelin Sheath to jump conduction velocity from 6 m/s to 105 m/s.",
+      "Raise Stimulus ≥ 55 μA with [Na⁺] ≥ 120 mM and Fire Spike to watch vesicles cross the synapse.",
+    ],
+    realWorldApplication:
+      "Explains human cognition, local anesthetics (which block Na⁺ channels), and neurological diagnostics like ECG/EEG.",
+    interpretLiveState: (state) => {
+      const m = calculateNeuronMetrics(
+        state.neuron.stimulusUa,
+        state.neuron.myelinated,
+        state.neuron.sodiumMm,
+      );
+      const goal =
+        state.neuron.myelinated &&
+        state.neuron.sodiumMm >= 120 &&
+        state.neuron.lastPeakMv !== null &&
+        state.neuron.lastPeakMv >= 35;
+      return {
+        statusLabel: m.fires ? `Spike +${m.peakMv} mV` : "Sub-Threshold",
+        summary: `Stimulus ${state.neuron.stimulusUa} μA (${state.neuron.myelinated ? "Myelinated 105 m/s" : "Unmyelinated 6 m/s"}), [Na⁺] = ${state.neuron.sodiumMm} mM → predicted peak ${m.peakMv} mV.`,
+        nextStep: goal
+          ? "Full myelinated action potential & synaptic burst verified!"
+          : "Enable Myelin Sheath, set Stimulus ≥ 55 μA with [Na⁺] ≥ 120 mM, and click Fire Spike.",
+      };
+    },
+  },
+
+  pcr: {
+    id: "pcr",
+    governingPrinciple: "Polymerase Chain Reaction (Thermal Cycling DNA Amplification)",
+    formula: "N = N₀ · 2ⁿ  (94°C Denature → 56°C Anneal → 72°C Extend)",
+    variables: [
+      { symbol: "T_anneal", meaning: "Primer binding temperature (°C; optimal 54–60 °C)" },
+      { symbol: "n", meaning: "Completed thermal cycles (each cycle doubles target DNA)" },
+      { symbol: "Taq", meaning: "Thermostable DNA polymerase from Thermus aquaticus" },
+    ],
+    whyItHappens:
+      "Heating to 94 °C breaks hydrogen bonds to unzip double-stranded DNA. Cooling to ~56 °C lets forward & reverse primers bind specifically, and warming to 72 °C lets heat-stable Taq polymerase synthesize two new complementary strands—doubling copies exponentially every cycle.",
+    observationGuide: [
+      "Watch the 3D DNA strands unzip (red 94 °C), bind primers (cyan 56 °C), and extend with Taq (green 72 °C).",
+      "Tune Annealing Temp into 54–60 °C so primer specificity reaches 100%.",
+      "Run or step through ≥ 10 cycles to amplify >1,024 copies and light up the UV agarose gel band.",
+    ],
+    realWorldApplication:
+      "Used worldwide in medical diagnostics (RT-PCR), forensic DNA fingerprinting, and genetic research.",
+    interpretLiveState: (state) => {
+      const m = calculatePcrMetrics(
+        state.pcr.annealingTempC,
+        state.pcr.cycleCount,
+        state.pcr.taqActive,
+      );
+      const goal =
+        state.pcr.taqActive &&
+        state.pcr.annealingTempC >= 54 &&
+        state.pcr.annealingTempC <= 60 &&
+        state.pcr.cycleCount >= 10;
+      return {
+        statusLabel: `Cycle ${state.pcr.cycleCount} · ${m.dnaCopies.toLocaleString()}×`,
+        summary: `Annealing ${state.pcr.annealingTempC} °C (${m.specificityPct}% specific), Cycle ${state.pcr.cycleCount} → ${m.dnaCopies.toLocaleString()} DNA copies (${m.statusText}).`,
+        nextStep: goal
+          ? "Exponential PCR amplification & UV gel band confirmed!"
+          : "Set Annealing Temp to 54–60 °C with Taq ON and run at least 10 cycles.",
       };
     },
   },
@@ -591,8 +1060,32 @@ const HUMAN_MENTOR_HOOKS: Record<StationId, string> = {
     "Waves bouncing off the clamp overlap along the string—<breath> hit a natural harmonic and glowing standing loops lock in place.",
   dna:
     "Each rung across this double helix keeps the same width <breath> because adenine always pairs with thymine and guanine with cytosine.",
-  trig:
-    "Slide around the unit circle and you'll see a right triangle of radius one—<breath> sideways is cosine, height is sine.",
+  lens:
+    "Watch parallel light rays bend through this convex glass lens—<breath> place the glowing arrow at twice the focal length and an equal-size inverted image snaps into focus on the screen.",
+  electromagnet:
+    "Current looping through these copper coils builds a magnetic field down the axis—<breath> slide in the soft-iron core and watch the magnetic flux jump fourfold and lift the steel paperclips.",
+  resistors:
+    "In series, current squeezes through both resistors one after another, <breath> but flip to parallel and electrons split across two paths, dropping resistance and making the bulb shine brighter.",
+  displacement:
+    "Iron is more reactive than copper in the reactivity series, <breath> so dipping the iron strip turns blue copper sulfate pale green while metallic copper plates right onto the surface.",
+  carbon:
+    "Carbon forms four strong covalent bonds and links into chains—<breath> every step from methane to butane adds one carbon and two hydrogens in a neat tetrahedral zig-zag.",
+  reflex:
+    "When the heat pad fires, the nerve signal zips straight through the spinal cord to twitch the muscle—<breath> faster myelinated axons complete the protective reflex in under twenty milliseconds.",
+  mendel:
+    "Because the tall allele dominates over dwarf, crossing two hybrid Tt pea plants <breath> brings back the hidden recessive dwarf trait in a clean three-to-one ratio.",
+  doubleslit:
+    "Coherent laser light splits through two microscopic slits and overlaps like ripples on water, <breath> carving bright constructive bands and dark cancellations across the screen.",
+  photoelectric:
+    "Each light photon packs a quantum punch inversely proportional to its wavelength—<breath> cross the metal's work function and electrons leap across the vacuum tube until the stopping voltage halts them.",
+  haber:
+    "In the Haber reactor, high pressure pushes nitrogen and hydrogen into ammonia, <breath> while the iron catalyst lets us run fast at moderate temperature without destroying equilibrium yield.",
+  galvanic:
+    "Zinc gives up electrons that race across the wire to reduce copper ions, <breath> while the potassium chloride salt bridge balances charge and the Nernst equation tunes the exact cell voltage.",
+  neuron:
+    "Cross the minus fifty-five millivolt threshold and sodium channels snap open in a flash—<breath> firing an all-or-none spike down the myelinated axon to burst neurotransmitters across the synapse.",
+  pcr:
+    "Ninety-four degrees unzips the DNA helix, fifty-six snaps primers into place, <breath> and at seventy-two degrees Taq polymerase doubles your target DNA every single thermal cycle.",
 };
 
 const KANNADA_MENTOR_SCRIPTS: Record<
@@ -621,8 +1114,32 @@ const KANNADA_MENTOR_SCRIPTS: Record<
     `${name ? `${name}, ` : ""}ಇದು ಸ್ಥಾಯಿ ತರಂಗ ಪ್ರಯೋಗ. <breath> ${state.wave.frequencyHz} ಹರ್ಟ್ಜ್ ಆವೃತ್ತಿಯಲ್ಲಿ ತಂತಿಯಲ್ಲಿ ಪ್ರತಿಧ್ವನಿ ಉಂಟಾಗಿ ಪೂರ್ಣ ಸಂಖ್ಯೆಯ ಹಾರ್ಮೋನಿಕ್ ಅಲೆಗಳು ಸ್ಥಿರವಾಗಿ ಕಾಣುತ್ತವೆ.`,
   dna: (_state, name) =>
     `${name ? `${name}, ` : ""}ಇದು ಡಿಎನ್ಎ ದ್ವಿ-ಸುರುಳಿ ಮಾದರಿ. <breath> ಚಾರ್ಗಾಫ್ ನಿಯಮದಂತೆ ಅಡೆನಿನ್ ಯಾವಾಗಲೂ ಥೈಮಿನ್ ಜೊತೆ ಮತ್ತು ಗ್ವಾನಿನ್ ಸೈಟೋಸಿನ್ ಜೊತೆ ಜೋಡಿಯಾಗುವುದರಿಂದ ಸುರುಳಿಯ ಅಗಲ ಸಮವಾಗಿರುತ್ತದೆ.`,
-  trig: (state, name) =>
-    `${name ? `${name}, ` : ""}ಇದು ತ್ರಿಕೋನಮಿತಿ ಏಕಮಾನ ವೃತ್ತ. <breath> ${Math.round(state.trig.angleDeg)} ಡಿಗ್ರಿ ಕೋನದಲ್ಲಿ ಅಡ್ಡ ದೂರ ಕಾಸ್ ತೀಟಾ ಮತ್ತು ಎತ್ತರ ಸೈನ್ ತೀಟಾ ತೋರಿಸುತ್ತದೆ.`,
+  lens: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಹತ್ತನೇ ತರಗತಿಯ ಪೀನ ಮಸೂರ ಪ್ರಯೋಗ. <breath> ವಸ್ತುವನ್ನು ಫೋಕಲ್ ಉದ್ದ ${state.lens.focalLengthCm} ಸೆಂಟಿಮೀಟರ್ ನ ಎರಡರಷ್ಟು ದೂರದಲ್ಲಿ ಇಟ್ಟಾಗ ಪರದೆಯ ಮೇಲೆ ಸಮಾನ ಗಾತ್ರದ ತಲೆಕೆಳಗಾದ ನೈಜ ಪ್ರತಿಬಿಂಬ ಮೂಡುತ್ತದೆ.`,
+  electromagnet: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಸೊಲೆನಾಯ್ಡ್ ವಿದ್ಯುತ್ಕಾಂತ ಪ್ರಯೋಗ. <breath> ತಾಮ್ರದ ಸುರುಳಿಯಲ್ಲಿ ${state.electromagnet.currentA.toFixed(1)} ಆಂಪಿಯರ್ ವಿದ್ಯುತ್ ಹರಿಸಿ ಮೆದು ಕಬ್ಬಿಣದ ತಿರುಳು ಹಾಕಿದಾಗ ಕಾಂತಕ್ಷೇತ್ರ ನಾಲ್ಕು ಪಟ್ಟು ಹೆಚ್ಚಾಗಿ ದಿಕ್ಸೂಚಿ ತಿರುಗುತ್ತದೆ.`,
+  resistors: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಸರಣಿ ಮತ್ತು ಸಮಾಂತರ ರೋಧಕಗಳ ಮಂಡಲ. <breath> ಸಮಾಂತರ ಜೋಡಣೆಯಲ್ಲಿ ವಿದ್ಯುತ್ ಎರಡು ದಾರಿಗಳಲ್ಲಿ ಹರಿದು ಒಟ್ಟು ರೋಧ ಕಡಿಮೆಯಾಗುತ್ತದೆ ಮತ್ತು ಬಲ್ಬ್ ಹೆಚ್ಚು ಪ್ರಕಾಶಮಾನವಾಗಿ ಉರಿಯುತ್ತದೆ.`,
+  displacement: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಲೋಹದ ಸ್ಥಾನಪಲ್ಲಟ ರಾಸಾಯನಿಕ ಕ್ರಿಯೆ. <breath> ಕಬ್ಬಿಣವು ತಾಮ್ರಕ್ಕಿಂತ ಹೆಚ್ಚು ಕ್ರಿಯಾಶೀಲವಾಗಿರುವುದರಿಂದ ನೀಲಿ ಕಾಪರ್ ಸಲ್ಫೇಟ್ ದ್ರಾವಣ ತಿಳಿ ಹಸಿರು ಬಣ್ಣಕ್ಕೆ ತಿರುಗಿ ತಾಮ್ರದ ಪದರ ಸಂಗ್ರಹವಾಗುತ್ತದೆ.`,
+  carbon: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಕಾರ್ಬನ್ ಆಲ್ಕೇನ್ ಅಣು ಮಾದರಿ. <breath> ಈಗ ${state.carbon.carbons} ಕಾರ್ಬನ್ ಪರಮಾಣುಗಳ ಸರಪಳಿ ಕಾಣುತ್ತಿದೆ; ಪ್ರತಿಯೊಂದು ಕಾರ್ಬನ್ ನಾಲ್ಕು ಸಹವೇಲೆನ್ಸಿಯ ಬಂಧಗಳನ್ನು ನಿರ್ಮಿಸುತ್ತದೆ.`,
+  reflex: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಪರಾವರ್ತಿತ ಕ್ರಿಯೆಯ ನರಮಾರ್ಗ. <breath> ಬಿಸಿ ತಾಗಿದ ತಕ್ಷಣ ಸಂವೇದಿ ನರದಿಂದ ಬೆನ್ನುಹುರಿಗೆ ಸಂದೇಶ ಹೋಗಿ ${calculateReflexTimeMs(state.reflex.conductionSpeedMs).toFixed(0)} ಮಿಲಿಸೆಕೆಂಡ್ ಒಳಗೆ ಸ್ನಾಯು ತಕ್ಷಣ ಪ್ರತಿಕ್ರಿಯಿಸುತ್ತದೆ.`,
+  mendel: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಮೆಂಡೆಲ್ ಏಕತಳಿ ಸಂಕರಣ ಪ್ರಯೋಗ. <breath> ಎರಡು ಮಿಶ್ರ ತಳಿ ಬಟಾಣಿ ಸಸ್ಯಗಳನ್ನು ಸಂಕರಿಸಿದಾಗ ಮೂರು ಎತ್ತರದ ಮತ್ತು ಒಂದು ಗಿಡ್ಡ ಸಸ್ಯ ಮೂರು ಅನುಪಾತ ಒಂದರಲ್ಲಿ ಬೆಳೆಯುತ್ತವೆ.`,
+  doubleslit: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಯಂಗ್ ದ್ವಿ-ಸೀಳು ವ್ಯತಿಕರಣ ಪ್ರಯೋಗ. <breath> ${state.doubleslit.wavelengthNm} ನ್ಯಾನೋಮೀಟರ್ ಲೇಸರ್ ಬೆಳಕು ಎರಡು ಸೀಳುಗಳ ಮೂಲಕ ಹಾದುಹೋಗಿ ಪರದೆಯ ಮೇಲೆ ಪ್ರಕಾಶಮಾನ ಮತ್ತು ಕತ್ತಲೆ ಪಟ್ಟೆಗಳನ್ನು ನಿರ್ಮಿಸುತ್ತದೆ.`,
+  photoelectric: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಐನ್‌ಸ್ಟೈನ್ ದ್ಯುತಿವಿದ್ಯುತ್ ಪರಿಣಾಮ ಪ್ರಯೋಗ. <breath> ಫೋಟಾನ್ ಶಕ್ತಿ ಲೋಹದ ಕಾರ್ಯಫಲನಕ್ಕಿಂತ ಹೆಚ್ಚಾದಾಗ ಮಾತ್ರ ಎಲೆಕ್ಟ್ರಾನ್‌ಗಳು ಹೊರಬರುತ್ತವೆ; ತಡೆ ವೋಲ್ಟೇಜ್ ಹೆಚ್ಚಿಸಿದರೆ ಅವು ನಿಲ್ಲುತ್ತವೆ.`,
+  haber: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಹೇಬರ್ ಅಮೋನಿಯಾ ರಿಯಾಕ್ಟರ್. <breath> ಹೆಚ್ಚಿನ ಒತ್ತಡ ${state.haber.pressureAtm} ಎಟಿಎಂ ಮತ್ತು ಕಬ್ಬಿಣದ ವೇಗವರ್ಧಕ ಬಳಸಿ ಅಮೋನಿಯಾ ಉತ್ಪಾದನೆ ಮತ್ತು ವೇಗ ಎರಡನ್ನೂ ಸಮತೋಲನಗೊಳಿಸಬಹುದು.`,
+  galvanic: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಡೇನಿಯಲ್ ಗ್ಯಾಲ್ವನಿಕ್ ಕೋಶ. <breath> ಜಿಂಕ್ ಆನೋಡ್ ನಿಂದ ಕಾಪರ್ ಕ್ಯಾಥೋಡ್ ಗೆ ಎಲೆಕ್ಟ್ರಾನ್ ಹರಿಯುತ್ತವೆ ಮತ್ತು ಲವಣ ಸೇತುವೆ ವಿದ್ಯುತ್ ಸಮತೋಲನ ಕಾಪಾಡುತ್ತದೆ.`,
+  neuron: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ನರಕೋಶದ ಆಕ್ಷನ್ ಪೊಟೆನ್ಷಿಯಲ್ ಪ್ರಯೋಗ. <breath> ಸೋಡಿಯಂ ಚಾನೆಲ್‌ಗಳು ತೆರೆದ ತಕ್ಷಣ ವಿದ್ಯುತ್ ಸಂಕೇತ ಮೈಲಿನ್ ಕವಚದ ಮೂಲಕ ವೇಗವಾಗಿ ಸಾಗಿ ಸಿನಾಪ್ಸ್ ದಾಟುತ್ತದೆ.`,
+  pcr: (state, name) =>
+    `${name ? `${name}, ` : ""}ಇದು ಪಿಸಿಆರ್ ಡಿಎನ್ಎ ವರ್ಧನೆ ಪ್ರಯೋಗ. <breath> 94 ಡಿಗ್ರಿಯಲ್ಲಿ ಡಿಎನ್ಎ ಬಿಚ್ಚಿ, ${state.pcr.annealingTempC} ಡಿಗ್ರಿಯಲ್ಲಿ ಪ್ರೈಮರ್ ಸೇರಿ, 72 ಡಿಗ್ರಿಯಲ್ಲಿ ಟ್ಯಾಕ್ ಪಾಲಿಮರೇಸ್ ಪ್ರತಿ ಸುತ್ತಿಗೂ ಡಿಎನ್ಎ ದ್ವಿಗುಣಗೊಳಿಸುತ್ತದೆ.`,
 };
 
 const HINDI_MENTOR_SCRIPTS: Record<
@@ -651,8 +1168,32 @@ const HINDI_MENTOR_SCRIPTS: Record<
     `${name ? `${name}, ` : ""}यह अप्रगामी तरंग प्रयोग है। <breath> ${state.wave.frequencyHz} हर्ट्ज़ आवृत्ति पर डोरी में अनुनाद होता है और चमकदार स्थायी तरंग लूप बन जाते हैं।`,
   dna: (_state, name) =>
     `${name ? `${name}, ` : ""}यह डीएनए डबल हेलिक्स मॉडल है। <breath> चारगाफ के नियम के अनुसार एडेनिन हमेशा थायमिन से और ग्वानिन साइटोसिन से जुड़ता है, जिससे हेलिक्स की चौड़ाई एक जैसी रहती है।`,
-  trig: (state, name) =>
-    `${name ? `${name}, ` : ""}यह त्रिकोणमिति इकाई वृत्त है। <breath> ${Math.round(state.trig.angleDeg)} डिग्री कोण पर क्षैतिज दूरी कॉस थीटा और ऊंचाई साइन थीटा को दर्शाती है।`,
+  lens: (state, name) =>
+    `${name ? `${name}, ` : ""}यह दसवीं कक्षा का उत्तल लेंस प्रयोग है। <breath> वस्तु को फोकस दूरी ${state.lens.focalLengthCm} सेंटीमीटर के दोगुने पर रखने पर पर्दे पर बराबर आकार का वास्तविक और उल्टा प्रतिबिंब बनता है।`,
+  electromagnet: (state, name) =>
+    `${name ? `${name}, ` : ""}यह परिनालिका विद्युत चुंबक प्रयोग है। <breath> तांबे की कुंडली में ${state.electromagnet.currentA.toFixed(1)} एम्पियर धारा बहाकर नरम लोहे का क्रोड डालने पर चुंबकीय क्षेत्र चार गुना बढ़ जाता है।`,
+  resistors: (state, name) =>
+    `${name ? `${name}, ` : ""}यह श्रेणी और समांतर प्रतिरोधक परिपथ है। <breath> समांतर क्रम में धारा दो रास्तों में बंटती है जिससे कुल प्रतिरोध कम हो जाता है और बल्ब अधिक तेज चमकता है।`,
+  displacement: (state, name) =>
+    `${name ? `${name}, ` : ""}यह धातु विस्थापन अभिक्रिया है। <breath> लोहा तांबे से अधिक अभिक्रियाशील होने के कारण नीले कॉपर सल्फेट को हल्के हरे रंग में बदल देता है और पट्टी पर भूरा तांबा जम जाता है।`,
+  carbon: (state, name) =>
+    `${name ? `${name}, ` : ""}यह कार्बन एल्केन अणु मॉडल है। <breath> अभी ${state.carbon.carbons} कार्बन परमाणुओं की श्रृंखला दिख रही है; हर कार्बन चार सहसंयोजक बंध बनाकर चतुष्फलकीय आकार लेता है।`,
+  reflex: (state, name) =>
+    `${name ? `${name}, ` : ""}यह प्रतिवर्ती चाप तंत्रिका मार्ग है। <breath> गर्मी लगते ही संवेदी तंत्रिका मेरुरज्जु को संकेत भेजती है और लगभग ${calculateReflexTimeMs(state.reflex.conductionSpeedMs).toFixed(0)} मिलीसेकंड में मांसपेशी तुरंत सिकुड़ जाती है।`,
+  mendel: (state, name) =>
+    `${name ? `${name}, ` : ""}यह मेंडल का एकसंकर संकरण प्रयोग है। <breath> दो संकर लंबे मटर पौधों का संकरण करने पर दूसरी पीढ़ी में तीन लंबे और एक बौना पौधा तीन अनुपात एक में उगता है।`,
+  doubleslit: (state, name) =>
+    `${name ? `${name}, ` : ""}यह यंग का डबल-स्लिट व्यतिकरण प्रयोग है। <breath> ${state.doubleslit.wavelengthNm} नैनोमीटर लेजर तरंगें दो स्लिट से गुजरकर पर्दे पर चमकीली और काली फ्रिंज बनाती हैं।`,
+  photoelectric: (state, name) =>
+    `${name ? `${name}, ` : ""}यह आइंस्टीन का प्रकाश-विद्युत प्रभाव प्रयोग है। <breath> जब फोटॉन की ऊर्जा धातु के कार्य-फलन से अधिक होती है तभी इलेक्ट्रॉन बाहर निकलते हैं।`,
+  haber: (state, name) =>
+    `${name ? `${name}, ` : ""}यह हैबर अमोनिया रिएक्टर है। <breath> ${state.haber.pressureAtm} एटीएम उच्च दाब और लोहे के उत्प्रेरक से अमोनिया की उपज और अभिक्रिया दर दोनों संतुलित होती हैं।`,
+  galvanic: (state, name) =>
+    `${name ? `${name}, ` : ""}यह डेनियल गैल्वेनिक सेल है। <breath> जिंक एनोड से कॉपर कैथोड की ओर इलेक्ट्रॉन बहते हैं और लवण सेतु आयन संतुलन बनाए रखता है।`,
+  neuron: (state, name) =>
+    `${name ? `${name}, ` : ""}यह न्यूरॉन एक्शन पोटेंशियल प्रयोग है। <breath> थ्रेशहोल्ड पार होते ही सोडियम चैनल खुलते हैं और विद्युत आवेग मायलिन अक्षतंतु से सिनैप्स तक दौड़ता है।`,
+  pcr: (state, name) =>
+    `${name ? `${name}, ` : ""}यह पीसीआर डीएनए प्रवर्धन प्रयोग है। <breath> 94 डिग्री पर डीएनए खुलता है, ${state.pcr.annealingTempC} डिग्री पर प्राइमर जुड़ते हैं और 72 डिग्री पर टैक पॉलीमरेज़ हर चक्र में प्रतियाँ दोगुनी करता है।`,
 };
 
 export function buildSpokenExplanationScript(

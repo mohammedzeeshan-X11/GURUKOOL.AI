@@ -8,6 +8,7 @@ import {
   Glasses,
   Loader2,
   SlidersHorizontal,
+  Sparkles,
   Square,
   Volume2,
 } from "lucide-react";
@@ -24,10 +25,15 @@ import {
 } from "../lab/explainability";
 import {
   buildProgressSnapshot,
+  EMPTY_COMPLETED_QUESTS,
   INITIAL_EXPERIMENT_STATE,
   LAB_QUESTS,
+  LAB_ROOMS,
+  ROOM_ORDER,
+  ROOM_STATIONS,
+  STATION_ORDER,
 } from "../lab/quests";
-import type { StationId } from "../lab/types";
+import type { LabRoomId, StationId } from "../lab/types";
 import {
   labVoiceNarrator,
   useVoiceNarrator,
@@ -35,50 +41,7 @@ import {
 import { useRouter } from "../router/RouterContext";
 import type { TutorLanguage } from "../types/navigation";
 
-const STATIONS: readonly StationId[] = [
-  "pendulum",
-  "optics",
-  "titration",
-  "circuit",
-  "electrolysis",
-  "photosynthesis",
-  "microscope",
-  "projectile",
-  "boyles",
-  "wave",
-  "dna",
-  "trig",
-];
-
-type DisciplineFilter =
-  | "All STEM"
-  | "Physics"
-  | "Chemistry"
-  | "Biology"
-  | "Mathematics";
-
-const DISCIPLINE_TABS: readonly DisciplineFilter[] = [
-  "All STEM",
-  "Physics",
-  "Chemistry",
-  "Biology",
-  "Mathematics",
-];
-
-const INITIAL_COMPLETED: Record<StationId, boolean> = {
-  pendulum: false,
-  optics: false,
-  titration: false,
-  circuit: false,
-  electrolysis: false,
-  photosynthesis: false,
-  microscope: false,
-  projectile: false,
-  boyles: false,
-  wave: false,
-  dna: false,
-  trig: false,
-};
+type RoomFilter = "all" | LabRoomId;
 
 export function LaboratoriesPage() {
   const { navigate } = useRouter();
@@ -86,10 +49,9 @@ export function LaboratoriesPage() {
   const voice = useVoiceNarrator();
   const [labActive, setLabActive] = useState(false);
   const [entryStation, setEntryStation] = useState<StationId>("pendulum");
-  const [disciplineFilter, setDisciplineFilter] =
-    useState<DisciplineFilter>("All STEM");
+  const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
   const [completedQuests, setCompletedQuests] =
-    useState<Record<StationId, boolean>>(INITIAL_COMPLETED);
+    useState<Record<StationId, boolean>>(() => ({ ...EMPTY_COMPLETED_QUESTS }));
 
   const enterAtStation = (station: StationId) => {
     setEntryStation(station);
@@ -97,14 +59,11 @@ export function LaboratoriesPage() {
   };
 
   const filteredStations = useMemo(() => {
-    if (disciplineFilter === "All STEM") return STATIONS;
-    return STATIONS.filter(
-      (id) => LAB_QUESTS[id].discipline === disciplineFilter,
-    );
-  }, [disciplineFilter]);
+    return roomFilter === "all" ? STATION_ORDER : ROOM_STATIONS[roomFilter];
+  }, [roomFilter]);
 
   const totalXp = useMemo(
-    () => STATIONS.reduce((sum, id) => sum + LAB_QUESTS[id].xpReward, 0),
+    () => STATION_ORDER.reduce((sum, id) => sum + LAB_QUESTS[id].xpReward, 0),
     [],
   );
 
@@ -113,7 +72,7 @@ export function LaboratoriesPage() {
     [completedQuests],
   );
   const completedCount = useMemo(
-    () => STATIONS.filter((id) => completedQuests[id]).length,
+    () => STATION_ORDER.filter((id) => completedQuests[id]).length,
     [completedQuests],
   );
 
@@ -132,16 +91,32 @@ export function LaboratoriesPage() {
     <div className="space-y-10">
       <SectionHeader
         indexLabel="Laboratories"
-        title="AR / VR Gamified STEM Laboratory"
-        description="Perform 12 interactive experiments across Physics, Chemistry, Biology, and Mathematics inside the workbench below or inside the walkable 3D / AR / VR pavilion."
+        title="Pocket Labs · 3D / AR / VR Subject Laboratories"
+        description="Explore 24 foundational & advanced NCERT science experiments across 3 dedicated walkable 3D rooms — Physics Laboratory (01–10), Chemistry Laboratory (11–17), and Biology Laboratory (18–24)."
         action={
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={() => enterAtStation("pendulum")}
-          >
-            Enter 3D / AR / VR Lab
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => enterAtStation("pendulum")}
+            >
+              Physics Lab
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => enterAtStation("titration")}
+            >
+              Chemistry Lab
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => enterAtStation("photosynthesis")}
+            >
+              Biology Lab
+            </Button>
+          </div>
         }
       />
 
@@ -170,7 +145,7 @@ export function LaboratoriesPage() {
               </span>
             </p>
             <p className="text-xs font-mono tabular-nums text-[var(--text-secondary)]">
-              {progress.xp} / {totalXp} XP · {completedCount}/{STATIONS.length} Experiments Completed
+              {progress.xp} / {totalXp} XP · {completedCount}/{STATION_ORDER.length} Experiments Completed
             </p>
           </div>
         </div>
@@ -207,7 +182,75 @@ export function LaboratoriesPage() {
         </div>
       </Card>
 
-      {/* Interactive 3D-Inspired Container Workbench */}
+      {/* Three Dedicated Subject 3D Laboratory Rooms */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {ROOM_ORDER.map((roomId, idx) => {
+          const roomInfo = LAB_ROOMS[roomId];
+          const roomDone = ROOM_STATIONS[roomId].filter(
+            (id) => completedQuests[id],
+          ).length;
+          const accentBadgeClass =
+            roomId === "physics"
+              ? "text-[#2F4368]"
+              : roomId === "chemistry"
+                ? "text-[#6F4E37]"
+                : "text-[#2D6A4F]";
+
+          return (
+            <Card
+              key={roomId}
+              tone={roomId === "physics" ? "lavender" : "surface"}
+              padding="md"
+              className="flex flex-col justify-between gap-4"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span
+                    className={[
+                      "font-mono tabular-nums font-semibold",
+                      accentBadgeClass,
+                    ].join(" ")}
+                  >
+                    Room {idx + 1} · {roomInfo.stationRange}
+                  </span>
+                  <span className="font-mono tabular-nums text-[var(--text-muted)]">
+                    {roomDone}/{ROOM_STATIONS[roomId].length} Done
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                    {roomInfo.name}
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    {roomInfo.wingBadge}
+                  </p>
+                </div>
+                <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
+                  {roomInfo.description}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  variant={roomId === "physics" ? "primary" : "secondary"}
+                  size="md"
+                  onClick={() => enterAtStation(roomInfo.defaultStation)}
+                >
+                  Enter {roomInfo.shortLabel}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={() => setRoomFilter(roomId)}
+                >
+                  Filter ({ROOM_STATIONS[roomId].length})
+                </Button>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Interactive 2D Workbench Quick Preview */}
       <VirtualLaboratory
         completedQuests={completedQuests}
         onQuestsChange={setCompletedQuests}
@@ -217,14 +260,14 @@ export function LaboratoriesPage() {
       {/* Entry Modes Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <Card tone="surface" padding="md" className="space-y-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#F3ECE6] text-[var(--accent-mocha)]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#EEF2F7] text-[#2F4368]">
             <Footprints className="h-4 w-4" aria-hidden="true" />
           </div>
           <h3 className="text-base font-semibold text-[var(--text-primary)]">
-            Walk-In 3D &amp; Bench Orbit
+            3 Subject Rooms &amp; 3D Portals
           </h3>
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            Walk across the 12-station laboratory floor using WASD/touch controls or glide directly to any workbench.
+            Walk across 24 detailed science benches in Physics, Chemistry, and Biology wings via WASD/touch with animated avatar hand interactions or click the South-wall 3D doorways to move between rooms.
           </p>
         </Card>
 
@@ -233,58 +276,66 @@ export function LaboratoriesPage() {
             <Glasses className="h-4 w-4" aria-hidden="true" />
           </div>
           <h3 className="text-base font-semibold text-[var(--text-primary)]">
-            WebXR VR Headset Support
+            WebXR &amp; Stereo VR Support
           </h3>
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            Launches immersive WebXR sessions with controller ray selection on compatible VR headsets and XR browsers.
+            Launches native WebXR headset sessions or split-screen Stereo 3D VR right in the browser with ray-click bench interaction.
           </p>
         </Card>
 
         <Card tone="surface" padding="md" className="space-y-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#F3EFF9] text-[var(--accent-lavender-ink)]">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#F1F6F2] text-[#2D6A4F]">
             <Camera className="h-4 w-4" aria-hidden="true" />
           </div>
           <h3 className="text-base font-semibold text-[var(--text-primary)]">
             AR Tabletop Passthrough
           </h3>
           <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-            Supports WebXR AR passthrough and live camera-feed AR tabletop overlay so benches sit on your physical desk.
+            Isolate any apparatus onto your desk with WebXR AR passthrough or live camera-feed tabletop projection and pinch/slider scaling.
           </p>
         </Card>
       </div>
 
-      {/* 12 Gamified STEM Experiment Stations */}
+      {/* 18 Detailed Science Experiment Stations */}
       <div className="space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
           <div className="space-y-1">
             <h3 className="text-xl font-semibold text-[var(--text-primary)]">
-              All STEM Experiment Quests ({STATIONS.length} Benches ·{" "}
+              Science Experiment Quests ({STATION_ORDER.length} Benches ·{" "}
               <span className="tabular-nums">{totalXp.toLocaleString()}</span>{" "}
               Total XP)
             </h3>
             <button
               type="button"
-              onClick={() => navigate("/curriculum")}
-              className="text-sm font-medium text-[var(--accent-mocha)] hover:underline cursor-pointer"
+              onClick={() => navigate("/tutor")}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent-mocha)] hover:underline cursor-pointer"
             >
-              View Classes 6–10 Curriculum Slots
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              Need another NCERT concept? Generate a custom 3D simulation in AI Tutor
             </button>
           </div>
 
           <div
             role="tablist"
-            aria-label="Filter experiments by STEM discipline"
+            aria-label="Filter experiments by subject room"
             className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-surface-muted)] p-1"
           >
-            {DISCIPLINE_TABS.map((tab) => {
-              const active = tab === disciplineFilter;
+            {(
+              [
+                { id: "all", label: `All Rooms (${STATION_ORDER.length})` },
+                { id: "physics", label: "Physics (01–10)" },
+                { id: "chemistry", label: "Chemistry (11–17)" },
+                { id: "biology", label: "Biology (18–24)" },
+              ] as const
+            ).map((tab) => {
+              const active = tab.id === roomFilter;
               return (
                 <button
-                  key={tab}
+                  key={tab.id}
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setDisciplineFilter(tab)}
+                  onClick={() => setRoomFilter(tab.id)}
                   className={[
                     "min-h-[36px] px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors",
                     active
@@ -292,7 +343,7 @@ export function LaboratoriesPage() {
                       : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-transparent",
                   ].join(" ")}
                 >
-                  {tab}
+                  {tab.label}
                 </button>
               );
             })}
@@ -303,6 +354,13 @@ export function LaboratoriesPage() {
           {filteredStations.map((id) => {
             const quest = LAB_QUESTS[id];
             const isCompleted = completedQuests[id];
+            const disciplineTone =
+              quest.discipline === "Physics"
+                ? "text-[#2F4368]"
+                : quest.discipline === "Chemistry"
+                  ? "text-[#6F4E37]"
+                  : "text-[#2D6A4F]";
+
             return (
               <Card
                 key={id}
@@ -312,11 +370,16 @@ export function LaboratoriesPage() {
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-                    <span className="font-mono tabular-nums text-[var(--accent-mocha)]">
+                    <span
+                      className={[
+                        "font-mono tabular-nums font-medium",
+                        disciplineTone,
+                      ].join(" ")}
+                    >
                       {quest.stationNumber} · {quest.discipline}
                     </span>
                     <span className="font-mono tabular-nums text-[var(--accent-lavender-ink)] font-medium">
-                      +{quest.xpReward} XP
+                      {quest.classTag} · +{quest.xpReward} XP
                     </span>
                   </div>
 
@@ -329,6 +392,10 @@ export function LaboratoriesPage() {
                       />
                     ) : null}
                   </h4>
+
+                  <p className="text-[11px] font-mono text-[var(--text-secondary)] bg-[var(--bg-canvas)] border border-[var(--border-hairline)] rounded-md px-2 py-1 w-fit">
+                    {quest.formula}
+                  </p>
 
                   <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed">
                     {quest.objective}
